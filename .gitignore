@@ -1,0 +1,27 @@
+# Secrets and runtime artefacts
+.env
+.env.*
+!.env.example
+
+# Private runtime storage
+storage/logs/*
+!storage/logs/.gitkeep
+storage/cache/*
+!storage/cache/.gitkeep
+storage/reports/*
+!storage/reports/.gitkeep
+storage/setup_token.txt
+
+# Uploads and generated files
+public/uploads/*
+!public/uploads/.gitkeep
+
+# Dependencies / editor noise
+/vendor/
+node_modules/
+.vscode/
+.idea/
+*.log
+*.tmp
+Thumbs.db
+desktop.ini

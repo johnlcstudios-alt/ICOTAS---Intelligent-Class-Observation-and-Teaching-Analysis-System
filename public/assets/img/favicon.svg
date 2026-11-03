@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">ICOTAS</title>
+  <defs>
+    <linearGradient id="crest" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7a2232"/>
+      <stop offset="1" stop-color="#3d0f18"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="14" y1="48" x2="50" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b8913f"/>
+      <stop offset="1" stop-color="#e7cf9a"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#crest)"/>
+  <path d="M32 7.5 51 15v15.2c0 11-7.7 21-19 26.3-11.3-5.3-19-15.3-19-26.3V15Z" fill="none" stroke="url(#gold)" stroke-width="2.4"/>
+  <path d="M23.6 24.2h-2.1a6.4 6.4 0 0 0 0 12.8h2.1M29.4 24.2v16.4M42.6 25.9a5.3 5.3 0 0 0-4.1-1.8c-2.7 0-4.6 1.5-4.6 3.9 0 2.2 1.6 3.3 4.5 4.1 3.2.9 4.9 2.1 4.9 4.5 0 2.6-2.1 4.2-5 4.2a5.6 5.6 0 0 1-4.5-2" fill="none" stroke="#f7eeda" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
