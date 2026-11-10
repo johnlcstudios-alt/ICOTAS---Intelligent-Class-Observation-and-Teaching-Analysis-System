@@ -1,0 +1,20 @@
+# Local secrets
+/config/local.php
+/config/local.php.tmp
+
+# Runtime data
+/storage/installed.lock
+/storage/logs/*
+!/storage/logs/.gitkeep
+/storage/cache/*
+!/storage/cache/.gitkeep
+/storage/reports/*
+!/storage/reports/.gitkeep
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+*.log
+
+# Local deployment artifacts
+/dist/

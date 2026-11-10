@@ -1,0 +1,44 @@
+# ICOTAS root Apache configuration
+# Works at the document root (InfinityFree) and in a subdirectory (XAMPP).
+
+<IfModule mod_autoindex.c>
+    Options -Indexes
+</IfModule>
+
+DirectoryIndex index.php
+
+# Block direct requests to application source and private data directories.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    RewriteRule ^(?:app|config|database|documentation|storage|tools|tests)(?:/|$) - [F,L,NC]
+
+    # Front controller: serve existing files, route everything else through index.php.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [QSA,L]
+</IfModule>
+
+# Deny hidden files, secrets, SQL dumps, logs, locks and documentation.
+<FilesMatch "^(\.|local\.php$|local\.sample\.php$|composer\.(json|lock)$)">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+<FilesMatch "\.(sql|log|lock|md|ini|env|bak|tmp|dist|sample\.php)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# UTF-8 by default.
+AddDefaultCharset UTF-8
