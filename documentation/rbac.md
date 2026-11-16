@@ -4,8 +4,8 @@
 
 | Slug | Display name | Scope |
 |---|---|---|
-| `dean` | Dean / Academic Head | Full institutional administration |
-| `academic_head` | Academic Head | Same administrative routes as `dean` in this build |
+| `dean` | Dean | Full institutional administration, including Dean/Academic Head account provisioning |
+| `academic_head` | Academic Head | The same administrative routes as `dean` except administrator-account provisioning and Dean records |
 | `instructor` | Instructor | Own teaching data only |
 | `student` | Student | Own evaluation portal, eligible sessions only |
 
@@ -41,7 +41,10 @@ Legend: ✅ allowed, — not available, ◐ limited to own records.
 | Capability | Dean / Academic Head | Instructor | Student |
 |---|---|---|---|
 | Institutional dashboard | ✅ | — | — |
-| User accounts, CSV import, password reset | ✅ | — | — |
+| User accounts, CSV import, password reset | ✅ (all roles) | ◐ instructor/student/academic-head only; Dean records are refused | — |
+| Administrator accounts module (`/dean/administrators`) | ✅ Dean only | — (403) | — |
+| Create a Dean or Academic Head account directly | ✅ | — (403) | — |
+| Issue/revoke Dean invitation codes from inside ICOTAS | ✅ | — | — |
 | Departments, programs, years, semesters, courses, sections, schedules, enrollments, teaching loads | ✅ | — | — |
 | Survey builder, templates, publish/new version/duplicate/archive | ✅ | — | — |
 | Evaluation assignments | ✅ | — | — |
@@ -66,6 +69,24 @@ Legend: ✅ allowed, — not available, ◐ limited to own records.
 | Submit anonymous evaluation | — | — | ✅ once per session |
 | Evaluation history | — | — | ✅ own participation status only |
 | Notifications | ✅ own | ✅ own | ✅ own |
+
+## 3a. Administrator account provisioning
+
+Two supported paths create an administrative account:
+
+1. **Direct creation** — a Dean opens `/dean/administrators`, supplies the profile, and ICOTAS either generates a temporary password (change required at first sign-in, shown once) or accepts an explicit password.
+2. **Invitation** — a Dean (or the unlinked developer console) issues a single-use, hashed invitation code; the recipient redeems it at `/dean-signup` and chooses their own password.
+
+Privilege-escalation rules enforced in code, not only in the UI:
+
+- `/dean/administrators` and every create/invite/revoke action carry `['auth', 'role:dean']`; an Academic Head receives 403.
+- `UserController::guardAssignableRole()` refuses the `dean` role for any account that is not a Dean, so a forged `role=dean` in `/dean/users` or a CSV import row is rejected.
+- `UserController::guardAdministrativeTarget()` refuses an Academic Head any edit, status change, or password reset on a Dean or Academic Head record other than their own.
+- An Academic Head's user directory excludes Dean accounts, and the Dean role is filtered out of their role dropdown.
+- `POST /dean/administrators` is rate-limited (`administrator.create`, 30/hour) and every creation, invitation, and revocation is written to `audit_logs`.
+- The last active Dean cannot be demoted or deactivated (pre-existing guard).
+
+Creating an account never bypasses authentication: a generated password always sets `must_change_password = 1`, and the `auth` middleware confines that session to `/account/password` until the change is made.
 
 ## 4. Instructor privacy rules
 
@@ -110,13 +131,15 @@ UAT invitations are intentionally public-by-token so external evaluators can res
 
 ## 7. Administrative scope note
 
-`academic_head` accounts currently share the full administrative route set with `dean`. If the institution requires department-limited Academic Head access, that is a future enhancement: add a department scope to `users`, filter administrative queries by it, and add tests before deployment. Do not assume the current build enforces department boundaries.
+`academic_head` accounts share the administrative route set with `dean` **except** administrator-account provisioning (`/dean/administrators`) and any change to a Dean record, which are Dean-only.
+
+Academic Head access is not yet department-limited: an Academic Head can still see and manage instructors, students, courses, sections, surveys, sessions, and reports institution-wide. If the institution requires department-scoped Academic Head access, that is a future enhancement: add a department scope to `users`, filter administrative queries by it, and add tests before deployment. Do not assume the current build enforces department boundaries.
 
 ## 8. Verification
 
 RBAC is covered by:
 
-- HTTP end-to-end checks: student receives 403 on dean and instructor dashboards.
+- HTTP end-to-end checks: student receives 403 on dean and instructor dashboards; an Academic Head receives 403 on `/dean/administrators`, on the create/POST endpoint, on a forged `role=dean` submission, and on opening or deactivating a Dean record; the Dean role is absent from the Academic Head user form and directory.
 - HTTP end-to-end onboarding checks: a wrong developer key returns 404, an invitation creates one live Dean account, single-use and revoked codes cannot be reused, and an instructor with a temporary password is confined to `/account/password`.
 - Automated tests: instructor analytics are restricted to that instructor; qr/session and UAT access checks; invitation hashing/consumption/revocation; forced-change flag lifecycle.
 - Smoke crawl: each role's own pages return HTTP 200.

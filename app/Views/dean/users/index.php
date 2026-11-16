@@ -17,6 +17,9 @@ $total = (int) ($pagination['total'] ?? 0);
         <p>Create and maintain Dean, Academic Head, Instructor and Student accounts. Deactivating an account preserves its historical records.</p>
     </div>
     <div class="page-actions">
+        <?php if (Auth::isDean()): ?>
+            <a class="btn btn-outline-primary" href="<?= url('dean/administrators') ?>"><i class="bi bi-shield-lock"></i> Administrator accounts</a>
+        <?php endif; ?>
         <a class="btn btn-outline-primary" href="<?= url('dean/users/import') ?>"><i class="bi bi-upload"></i> Import CSV</a>
         <a class="btn btn-primary" href="<?= url('dean/users/create') ?>"><i class="bi bi-person-plus"></i> New user</a>
     </div>

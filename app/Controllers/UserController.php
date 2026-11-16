@@ -33,8 +33,13 @@ final class UserController extends BaseController
         if ($filters['is_demo'] === '') {
             $filters['is_demo'] = $this->demo() ? 1 : 0;
         }
+        // Dean accounts carry college-wide authority: only a Dean may browse or
+        // change them. Everyone else is scoped to the roles they can manage.
+        if (!Auth::isDean()) {
+            $filters['exclude_role'] = 'dean';
+        }
         $pagination = $this->users->paginate($filters, $this->page(), 15);
-        $roles = Database::fetchAll('SELECT id, slug, name FROM roles ORDER BY id');
+        $roles = $this->assignableRoles();
         $counts = $this->users->countsByRole($this->demo());
 
         $this->view('dean/users/index', [
@@ -57,6 +62,7 @@ final class UserController extends BaseController
     {
         $this->requirePost();
         $role = $this->postString('role');
+        $this->guardAssignableRole($role);
         $isInstructor = $role === 'instructor';
         $data = $this->validatedUserData(null, !$isInstructor);
         $data['role_id'] = $this->roleId($role);
@@ -108,6 +114,7 @@ final class UserController extends BaseController
         if (!$user) {
             abort(404);
         }
+        $this->guardAdministrativeTarget($user);
         $generated = Session::pull('_generated_credentials');
         if (!is_array($generated) || (int) ($generated['user_id'] ?? 0) !== (int) $id) {
             $generated = null;
@@ -125,7 +132,9 @@ final class UserController extends BaseController
         if (!$user) {
             abort(404);
         }
+        $this->guardAdministrativeTarget($user);
         $role = $this->postString('role');
+        $this->guardAssignableRole($role);
         $data = $this->validatedUserData($id);
         $data['role_id'] = $this->roleId($role);
         $data['status'] = $this->postString('status', 'active');
@@ -171,6 +180,7 @@ final class UserController extends BaseController
         if (!$user) {
             abort(404);
         }
+        $this->guardAdministrativeTarget($user);
         if ($id === (int) Auth::id()) {
             $this->error('You cannot deactivate your own account.', 'dean/users');
         }
@@ -191,6 +201,7 @@ final class UserController extends BaseController
         if (!$user) {
             abort(404);
         }
+        $this->guardAdministrativeTarget($user);
         $password = (string) $this->input('password', '');
         $confirmation = (string) $this->input('password_confirmation', '');
         $problem = Security::passwordProblem($password);
@@ -292,6 +303,12 @@ final class UserController extends BaseController
                 continue;
             }
             $data = $validator->validated();
+            // Administrative roles are Dean-governed; a bulk CSV must not become
+            // a privilege-escalation path for an Academic Head.
+            if (!Auth::isDean() && in_array($record['role'], ['dean', 'academic_head'], true)) {
+                $errors[] = 'Row ' . $rowNumber . ': only a Dean may import ' . str_replace('_', ' ', $record['role']) . ' accounts.';
+                continue;
+            }
             $problem = Security::passwordProblem($record['password']);
             if ($problem !== null) {
                 $errors[] = 'Row ' . $rowNumber . ': ' . $problem;
@@ -348,13 +365,59 @@ final class UserController extends BaseController
         redirect('dean/users/import');
     }
 
+    /**
+     * Roles the signed-in administrator may assign. Only a Dean may create or
+     * grant the Dean role; an Academic Head is limited to the lower roles.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function assignableRoles(): array
+    {
+        $roles = Database::fetchAll('SELECT id, slug, name FROM roles ORDER BY id');
+        if (Auth::isDean()) {
+            return $roles;
+        }
+        return array_values(array_filter(
+            $roles,
+            static fn (array $role): bool => !in_array((string) $role['slug'], ['dean'], true)
+        ));
+    }
+
+    private function guardAssignableRole(string $slug): void
+    {
+        if ($slug === 'dean' && !Auth::isDean()) {
+            abort(403, 'Only a Dean may create or grant the Dean role.');
+        }
+        if (!in_array($slug, array_column($this->assignableRoles(), 'slug'), true)) {
+            abort(403, 'That role cannot be assigned by this account.');
+        }
+    }
+
+    /**
+     * Administrative accounts (Dean, Academic Head) are managed by a Dean.
+     */
+    private function guardAdministrativeTarget(array $target): void
+    {
+        if (Auth::isDean()) {
+            return;
+        }
+        // Administrators may always open their own record; role and status
+        // changes to self are neutralised in update().
+        if ((int) ($target['id'] ?? 0) === (int) Auth::id()) {
+            return;
+        }
+        if (in_array((string) ($target['role'] ?? ''), ['dean', 'academic_head'], true)) {
+            abort(403, 'Only a Dean may manage administrator accounts.');
+        }
+    }
+
     private function formData(?array $user): array
     {
         $demo = $user ? (int) $user['is_demo'] === 1 : $this->demo();
         return [
             'pageTitle' => $user ? 'Edit User' : 'New User',
             'user' => $user,
-            'roles' => Database::fetchAll('SELECT id, slug, name FROM roles ORDER BY id'),
+            'roles' => $this->assignableRoles(),
             'departments' => $this->academic->departments($demo, true),
             'programs' => $this->academic->programs($demo, null, true),
             'sections' => $this->academic->sections($demo, null, true),

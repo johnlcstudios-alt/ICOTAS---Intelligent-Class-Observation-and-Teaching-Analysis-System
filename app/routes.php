@@ -8,6 +8,7 @@
 
 use App\Controllers\AcademicController;
 use App\Controllers\AccountController;
+use App\Controllers\AdministratorController;
 use App\Controllers\AiController;
 use App\Controllers\AnalyticsController;
 use App\Controllers\AssignmentController;
@@ -83,6 +84,13 @@ $router->get('/dean/users/{id}/edit', [UserController::class, 'edit'], ['auth', 
 $router->post('/dean/users/{id}', [UserController::class, 'update'], ['auth', 'admin']);
 $router->post('/dean/users/{id}/status', [UserController::class, 'toggleStatus'], ['auth', 'admin']);
 $router->post('/dean/users/{id}/reset-password', [UserController::class, 'resetPassword'], ['auth', 'admin']);
+
+/* Administrator (Dean / Academic Head) account provisioning — Dean only, because
+ * it grants administrative authority. */
+$router->get('/dean/administrators', [AdministratorController::class, 'index'], ['auth', 'role:dean']);
+$router->post('/dean/administrators', [AdministratorController::class, 'store'], ['auth', 'role:dean']);
+$router->post('/dean/administrators/invites', [AdministratorController::class, 'storeInvite'], ['auth', 'role:dean']);
+$router->post('/dean/administrators/invites/{id}/revoke', [AdministratorController::class, 'revokeInvite'], ['auth', 'role:dean']);
 
 /* Academic structure: generic entity controller */
 $router->get('/dean/academic/{entity}', [AcademicController::class, 'index'], ['auth', 'admin']);

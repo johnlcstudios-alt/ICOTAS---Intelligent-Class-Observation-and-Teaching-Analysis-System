@@ -55,6 +55,12 @@ final class User extends Model
             $where[] = 'u.department_id = ?';
             $params[] = (int) $filters['department_id'];
         }
+        // Academic Heads may not browse or manage Dean accounts; the Dean-only
+        // administrator module owns them.
+        if (!empty($filters['exclude_role'])) {
+            $where[] = 'r.slug <> ?';
+            $params[] = (string) $filters['exclude_role'];
+        }
         if (!empty($filters['search'])) {
             $where[] = '(u.first_name LIKE ? OR u.last_name LIKE ? OR u.username LIKE ? OR u.email LIKE ? OR u.student_number LIKE ? OR u.employee_number LIKE ?)';
             $like = '%' . $filters['search'] . '%';
@@ -199,6 +205,56 @@ final class User extends Model
              WHERE r.slug = ? AND u.is_demo = ?' . ($activeOnly ? " AND u.status = 'active'" : '') . '
              ORDER BY u.last_name, u.first_name',
             ['student', $demo ? 1 : 0]
+        );
+    }
+
+    /**
+     * Dean and Academic Head accounts, which are governed separately from the
+     * general directory because they carry administrative authority.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function administrators(bool $demo = false, bool $activeOnly = false): array
+    {
+        return Database::fetchAll(
+            "SELECT u.*, r.slug AS role, r.name AS role_name, d.code AS department_code, d.name AS department_name
+             FROM users u
+             JOIN roles r ON r.id = u.role_id
+             LEFT JOIN departments d ON d.id = u.department_id
+             WHERE r.slug IN ('dean', 'academic_head') AND u.is_demo = ?"
+            . ($activeOnly ? " AND u.status = 'active'" : '') . '
+             ORDER BY FIELD(r.slug, \'dean\', \'academic_head\'), u.status ASC, u.last_name ASC, u.first_name ASC',
+            [$demo ? 1 : 0]
+        );
+    }
+
+    /**
+     * @return array<string,int> role slug => count for administrative accounts
+     */
+    public function countAdministrators(bool $demo = false): array
+    {
+        $rows = Database::fetchAll(
+            "SELECT r.slug, COUNT(u.id) AS total
+             FROM roles r
+             LEFT JOIN users u ON u.role_id = r.id AND u.is_demo = ?
+             WHERE r.slug IN ('dean', 'academic_head')
+             GROUP BY r.slug",
+            [$demo ? 1 : 0]
+        );
+        $out = ['dean' => 0, 'academic_head' => 0];
+        foreach ($rows as $row) {
+            $out[(string) $row['slug']] = (int) $row['total'];
+        }
+        return $out;
+    }
+
+    public function countByRole(string $slug, bool $demo = false, bool $activeOnly = false): int
+    {
+        return (int) Database::scalar(
+            'SELECT COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id
+             WHERE r.slug = ? AND u.is_demo = ?' . ($activeOnly ? " AND u.status = 'active'" : ''),
+            [$slug, $demo ? 1 : 0],
+            0
         );
     }
 

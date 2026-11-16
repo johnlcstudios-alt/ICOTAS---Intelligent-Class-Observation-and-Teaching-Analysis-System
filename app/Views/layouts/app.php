@@ -53,6 +53,9 @@ $demo = Setting::demoMode();
 
                 <span class="nav-label">Academic Structure</span>
                 <a class="nav-link <?= active_nav('dean/users') ?>" href="<?= url('dean/users') ?>"><i class="bi bi-people"></i> Users</a>
+                <?php if (Auth::isDean()): ?>
+                    <a class="nav-link <?= active_nav('dean/administrators') ?>" href="<?= url('dean/administrators') ?>"><i class="bi bi-shield-lock"></i> Administrators</a>
+                <?php endif; ?>
                 <a class="nav-link <?= active_nav('dean/academic/departments') ?>" href="<?= url('dean/academic/departments') ?>"><i class="bi bi-building"></i> Departments</a>
                 <a class="nav-link <?= active_nav('dean/academic/programs') ?>" href="<?= url('dean/academic/programs') ?>"><i class="bi bi-diagram-3"></i> Programs</a>
                 <a class="nav-link <?= active_nav('dean/academic/academic-years') ?>" href="<?= url('dean/academic/academic-years') ?>"><i class="bi bi-calendar3"></i> Academic Years</a>

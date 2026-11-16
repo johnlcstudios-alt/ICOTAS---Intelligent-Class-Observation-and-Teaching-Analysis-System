@@ -29,6 +29,7 @@ Use these terms precisely:
 | Research / system requirement | Implementation | Verification | Claim status |
 |---|---|---|---|
 | Dean/Academic Head administration | `dean`/`academic_head` routes and controllers | Route smoke, E2E RBAC | New implementation result |
+| Create / add Dean accounts (objective 1 support) | `AdministratorController`, `/dean/administrators`, `InviteService`, `/dean-signup` | Automated registry/creation tests; 36 new E2E checks including escalation refusals | New implementation result |
 | Instructor private data only | Ownership checks; instructor-scoped analytics/predictions/reports | Automated instructor-scope test; RBAC review | New implementation result |
 | Student mobile portal with QR, link, code | `/student/scan`, `/student/join`, `/evaluate/{token}` | E2E manual code, direct link, submission | New implementation result |
 | One response per session | Unique participation row + transaction + row lock | Automated duplicate test; E2E duplicate guard | New implementation result |
@@ -118,7 +119,7 @@ When the manuscript is available:
 4. Conduct a real UAT with documented recruitment and sample size.
 5. Test on InfinityFree and record PHP/MySQL versions, installer result, and smoke evidence.
 6. Perform accessibility review (WCAG 2.2 AA target) and physical-device QR testing.
-7. Add department-scoped Academic Head access if required.
+7. Add department-scoped Academic Head access if required (the administrator module already separates Dean-only authority).
 8. Add per-token brute-force throttling and MFA for administrative accounts.
 9. Add CSV formula-injection neutralization if exports are opened in spreadsheets.
 10. Conduct an independent security review and backup/restore drill.

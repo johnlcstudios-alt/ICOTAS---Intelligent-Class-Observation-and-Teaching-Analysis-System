@@ -33,6 +33,7 @@ foreach (array_slice($argv, 1) as $arg) {
 $presets = [
     'demo.dean' => [
         '/dean/dashboard', '/dean/users', '/dean/users/create', '/dean/users/import',
+        '/dean/administrators',
         '/dean/academic/departments', '/dean/academic/programs', '/dean/academic/academic-years',
         '/dean/academic/semesters', '/dean/academic/courses', '/dean/academic/sections',
         '/dean/academic/schedules', '/dean/academic/enrollments', '/dean/academic/teaching-assignments',
@@ -43,6 +44,11 @@ $presets = [
         '/dean/recommendations', '/dean/reports', '/dean/observations',
         '/dean/observations/create', '/dean/uat', '/dean/uat/create',
         '/notifications', '/dean/audit-logs', '/dean/settings', '/dean/demo',
+    ],
+    'demo.head.ccs' => [
+        '/dean/dashboard', '/dean/users', '/dean/users/create',
+        '/dean/academic/departments', '/dean/surveys', '/dean/sessions',
+        '/dean/analytics', '/dean/reports', '/notifications',
     ],
     'demo.instructor.01' => [
         '/instructor/dashboard', '/instructor/evaluations', '/instructor/analytics',

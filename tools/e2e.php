@@ -5,7 +5,7 @@
  *
  * Requires a second PHP development server bound to the isolated test database:
  *   $env:ICOTAS_DB_DATABASE='icotas_test'
- *   C:\xampp\php\php.exe -S 127.0.0.1:8091 tools/dev-router.php
+ *   C:\xampp\php\php.exe -S 127.0.0.1:8095 tools/dev-router.php
  * Then:
  *   php tests/prepare.php
  *   C:\xampp\php\php.exe tools/e2e.php
@@ -17,16 +17,21 @@
 
 declare(strict_types=1);
 
-$base = 'http://127.0.0.1:8091';
+$base = 'http://127.0.0.1:8095';
 foreach (array_slice($argv, 1) as $arg) {
     if (str_starts_with($arg, '--base=')) {
         $base = rtrim(substr($arg, 7), '/');
     }
 }
 
+// Two guards keep this harness away from anything but a local development
+// server: the target must be loopback on the reserved 8090-8099 development
+// range, and the bootstrapped application must point at the test database
+// (checked again below). Change the port with --base= if 8095 is taken.
+$host = (string) (parse_url($base, PHP_URL_HOST) ?: '');
 $port = (int) (parse_url($base, PHP_URL_PORT) ?: 80);
-if ($port !== 8091) {
-    fwrite(STDERR, "Refusing to run: use the isolated test server on port 8091 (got $base).\n");
+if (!in_array($host, ['127.0.0.1', 'localhost', '::1'], true) || $port < 8090 || $port > 8099) {
+    fwrite(STDERR, "Refusing to run: expected a loopback development server on port 8090-8099 (got $base).\n");
     exit(2);
 }
 
@@ -36,7 +41,6 @@ putenv('ICOTAS_DB_DATABASE=icotas_test');
 require dirname(__DIR__) . '/app/bootstrap.php';
 
 use App\Core\Database;
-use App\Core\RateLimiter;
 use App\Core\Security;
 use App\Services\InviteService;
 use App\Services\QRService;
@@ -59,6 +63,19 @@ function check(bool $condition, string $label, string $detail = ''): void
     }
     $failures++;
     echo "  FAIL  $label" . ($detail !== '' ? "  [$detail]" : '') . "\n";
+}
+
+/**
+ * Clear a rate-limit bucket for every identifier.
+ *
+ * The harness runs in a different process from the web server, so the
+ * IP-hash-scoped RateLimiter::clear() cannot be relied on here: the CLI
+ * request has no client address. Deleting the bucket rows directly keeps the
+ * scenarios independent of how many requests earlier scenarios made.
+ */
+function clearRateLimit(string $bucket): void
+{
+    Database::execute('DELETE FROM rate_limits WHERE bucket = ?', [$bucket]);
 }
 
 final class Http
@@ -93,6 +110,8 @@ final class Http
             CURLOPT_FOLLOWLOCATION => $follow,
             CURLOPT_MAXREDIRS => 5,
             CURLOPT_TIMEOUT => 60,
+            // Never let a machine-level proxy intercept loopback traffic.
+            CURLOPT_NOPROXY => '*',
         ];
         if ($method === 'POST') {
             $options[CURLOPT_POST] = true;
@@ -507,8 +526,8 @@ Database::execute('DELETE FROM rate_limits WHERE bucket = "auth.signup"');
 echo "\nDeveloper console and Dean invitation registration\n";
 $originalDeanSignup = (string) Database::scalar('SELECT setting_value FROM system_settings WHERE setting_key = "allow_dean_signup"', [], '1');
 Database::execute('UPDATE system_settings SET setting_value = "1" WHERE setting_key = "allow_dean_signup"');
-RateLimiter::clear('auth.dean_signup');
-RateLimiter::clear('developer.invite');
+clearRateLimit('auth.dean_signup');
+clearRateLimit('developer.invite');
 
 $developer = new Http($base);
 $hidden = $developer->get('/developer/not-the-configured-key');
@@ -682,12 +701,201 @@ check(str_contains($changed['url'], '/instructor/dashboard'), 'password change r
 
 $instructorAfter = Database::fetch('SELECT * FROM users WHERE id = ?', [$newInstructorId]);
 check((int) ($instructorAfter['must_change_password'] ?? 1) === 0, 'forced-change flag is cleared');
-check(password_verify($newInstructorPassword, $instructorAfter['password_hash']), 'new instructor password verifies');
+check(password_verify($newInstructorPassword, (string) ($instructorAfter['password_hash'] ?? '')), 'new instructor password verifies');
 
 $oldLogin = (new Http($base))->login($instructorUsername, $temporaryPassword);
 check(str_contains($oldLogin['body'], 'Invalid credentials'), 'temporary password stops working after the change');
 $newLogin = (new Http($base))->login($instructorUsername, $newInstructorPassword);
 check($newLogin['status'] === 200 && str_contains($newLogin['body'], 'Welcome back'), 'instructor signs in with the chosen password');
+
+echo "\nAdministrator account module (Dean-governed)\n";
+$adminPage = $deanSession->get('/dean/administrators');
+check($adminPage['status'] === 200, 'Dean opens the administrator accounts module', (string) $adminPage['status']);
+check(str_contains($adminPage['body'], 'Administrator accounts'), 'module renders its heading');
+check(str_contains($adminPage['body'], 'Create an administrator account'), 'module renders the creation form');
+check(str_contains($adminPage['body'], 'Dean invitation codes'), 'module renders the invitation registry');
+
+$headUsername = 'e2e.head.' . $suffix2;
+$headPayload = [
+    'first_name' => 'End-to-End',
+    'middle_name' => '',
+    'last_name' => 'Academic Head',
+    'suffix' => '',
+    'username' => $headUsername,
+    'email' => $headUsername . '@example.test',
+    'employee_number' => 'HEAD-' . $suffix2,
+    'phone' => '',
+    'department_id' => '',
+    'role' => 'academic_head',
+    'status' => 'active',
+    'password_mode' => 'generate',
+];
+$token = $deanSession->csrf('/dean/administrators');
+$headCreated = $deanSession->post('/dean/administrators', array_merge($headPayload, ['_token' => $token]), true);
+check($headCreated['status'] === 200, 'creating an administrator returns to the module', (string) $headCreated['status']);
+check(str_contains($headCreated['body'], 'New Academic Head credentials'), 'one-time administrator credentials are shown once');
+$headPassword = '';
+if (preg_match('/id="generatedAdminPassword"[^>]*value="([^"]+)"/', $headCreated['body'], $m)) {
+    $headPassword = html_entity_decode($m[1], ENT_QUOTES);
+}
+check($headPassword !== '', 'generated administrator password can be parsed');
+$headRow = Database::fetch(
+    'SELECT u.*, r.slug AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.username = ?',
+    [$headUsername]
+);
+$newHeadId = $headRow ? (int) $headRow['id'] : 0;
+check($headRow !== null, 'created administrator account exists');
+if ($headRow) {
+    check($headRow['role'] === 'academic_head', 'created account receives the requested administrative role');
+    check((int) $headRow['is_demo'] === 0, 'a directly created administrator is a live record');
+    check((int) $headRow['must_change_password'] === 1, 'a generated administrator password requires a change');
+    check(password_verify($headPassword, (string) $headRow['password_hash']), 'generated administrator password hash verifies');
+}
+$adminReload = $deanSession->get('/dean/administrators');
+check(!str_contains($adminReload['body'], 'id="generatedAdminPassword"'), 'one-time administrator credentials disappear after the redirect');
+
+$token = $deanSession->csrf('/dean/administrators');
+$duplicateAdmin = $deanSession->post('/dean/administrators', array_merge($headPayload, ['_token' => $token]), true);
+check(str_contains($duplicateAdmin['body'], 'already registered'), 'a duplicate administrator account is rejected');
+check((int) Database::scalar('SELECT COUNT(*) FROM users WHERE username = ?', [$headUsername], 0) === 1, 'the duplicate attempt creates no second row');
+
+$token = $deanSession->csrf('/dean/administrators');
+$missingName = $deanSession->post('/dean/administrators', array_merge($headPayload, [
+    '_token' => $token,
+    'username' => 'e2e.head.invalid.' . $suffix2,
+    'email' => 'e2e.head.invalid.' . $suffix2 . '@example.test',
+    'first_name' => '',
+]), true);
+check(str_contains($missingName['body'], 'required') || str_contains($missingName['body'], 'First name'), 'server-side validation refuses an incomplete administrator');
+check(Database::fetch('SELECT id FROM users WHERE username = ?', ['e2e.head.invalid.' . $suffix2]) === null, 'an invalid administrator submission creates no account');
+
+$headSession = new Http($base);
+$headLogin = $headSession->login($headUsername, $headPassword);
+check(str_contains($headLogin['url'], '/account/password'), 'the new administrator must change the temporary password first');
+$headPasswordChosen = 'E2eHead123456';
+$token = $headSession->csrf('/account/password');
+$headChanged = $headSession->post('/account/password', [
+    '_token' => $token,
+    'current_password' => $headPassword,
+    'password' => $headPasswordChosen,
+    'password_confirmation' => $headPasswordChosen,
+], true);
+check(str_contains($headChanged['body'], 'Password updated'), 'the administrator chooses a permanent password');
+check($headSession->get('/dean/dashboard')['status'] === 200, 'an Academic Head reaches the administrative dashboard');
+
+echo "\nPrivilege escalation is blocked for Academic Heads\n";
+$escalationPage = $headSession->get('/dean/administrators');
+check($escalationPage['status'] === 403, 'an Academic Head cannot open the administrator module', (string) $escalationPage['status']);
+$escalationPost = $headSession->post('/dean/administrators', array_merge($headPayload, [
+    '_token' => $headSession->csrf('/dean/administrators'),
+    'username' => 'e2e.head.escalate.' . $suffix2,
+    'email' => 'e2e.head.escalate.' . $suffix2 . '@example.test',
+]));
+check($escalationPost['status'] === 403, 'an Academic Head cannot reach the administrator creation endpoint', (string) $escalationPost['status']);
+check(Database::fetch('SELECT id FROM users WHERE username = ?', ['e2e.head.escalate.' . $suffix2]) === null, 'the blocked escalation creates no account');
+
+$headUserForm = $headSession->get('/dean/users/create');
+check($headUserForm['status'] === 200, 'an Academic Head can still open the user form', (string) $headUserForm['status']);
+check(!str_contains($headUserForm['body'], 'value="dean"'), 'the Dean role is not offered to an Academic Head');
+$token = $headSession->csrf('/dean/users/create');
+$forgedDean = $headSession->post('/dean/users', [
+    '_token' => $token,
+    'first_name' => 'Forged',
+    'middle_name' => '',
+    'last_name' => 'Dean',
+    'suffix' => '',
+    'username' => 'e2e.forged.dean.' . $suffix2,
+    'email' => 'e2e.forged.dean.' . $suffix2 . '@example.test',
+    'employee_number' => 'FORGED-' . $suffix2,
+    'student_number' => '',
+    'department_id' => '',
+    'program_id' => '',
+    'section_id' => '',
+    'year_level' => '',
+    'phone' => '',
+    'role' => 'dean',
+    'status' => 'active',
+    'password' => 'Forged123456',
+    'password_confirmation' => 'Forged123456',
+]);
+check($forgedDean['status'] === 403, 'a forged Dean role in the user form is refused', (string) $forgedDean['status']);
+check(Database::fetch('SELECT id FROM users WHERE username = ?', ['e2e.forged.dean.' . $suffix2]) === null, 'the forged Dean role creates no account');
+$headDirectory = $headSession->get('/dean/users');
+check(!str_contains($headDirectory['body'], $deanUsername), 'Dean accounts are hidden from an Academic Head directory');
+$headEditDean = $headSession->get('/dean/users/' . $newDeanId . '/edit');
+check($headEditDean['status'] === 403, 'an Academic Head cannot edit a Dean account', (string) $headEditDean['status']);
+$headStatusDean = $headSession->post('/dean/users/' . $newDeanId . '/status', ['_token' => $headSession->csrf('/dean/users')]);
+check($headStatusDean['status'] === 403, 'an Academic Head cannot deactivate a Dean account', (string) $headStatusDean['status']);
+
+echo "\nDean invitations issued from the administrator module\n";
+clearRateLimit('auth.dean_signup');
+clearRateLimit('administrator.invite');
+$token = $deanSession->csrf('/dean/administrators');
+$moduleInviteCreated = $deanSession->post('/dean/administrators/invites', [
+    '_token' => $token,
+    'max_uses' => '1',
+    'valid_days' => '7',
+    'note' => 'E2E module invitation',
+], true);
+check($moduleInviteCreated['status'] === 200, 'Dean creates an invitation from the module', (string) $moduleInviteCreated['status']);
+check(str_contains($moduleInviteCreated['body'], 'New Dean invitation code'), 'the module invitation code is displayed once');
+$moduleInviteCode = '';
+if (preg_match('/id="generatedAdminInvite"[^>]*value="([^"]+)"/', $moduleInviteCreated['body'], $m)) {
+    $moduleInviteCode = html_entity_decode($m[1], ENT_QUOTES);
+}
+check($moduleInviteCode !== '', 'the module invitation code can be parsed');
+$moduleInviteRow = Database::fetch('SELECT * FROM registration_invites WHERE note = ? ORDER BY id DESC LIMIT 1', ['E2E module invitation']);
+check($moduleInviteRow !== null, 'the module invitation row exists');
+if ($moduleInviteRow) {
+    check(hash_equals((string) $moduleInviteRow['code_hash'], InviteService::hash($moduleInviteCode)), 'the module stores only the invitation hash');
+}
+
+$moduleDeanUsername = 'e2e.module.dean.' . $suffix2;
+$moduleApplicant = new Http($base);
+$moduleSignup = $moduleApplicant->post('/dean-signup', array_merge($deanApplication, [
+    '_token' => $moduleApplicant->csrf('/dean-signup'),
+    'username' => $moduleDeanUsername,
+    'email' => $moduleDeanUsername . '@example.test',
+    'employee_number' => 'DEAN-MODULE-' . $suffix2,
+    'invitation_code' => $moduleInviteCode,
+]), true);
+check(str_contains($moduleSignup['body'], 'Dean account created'), 'a module invitation creates a Dean account');
+$moduleDeanRow = Database::fetch(
+    'SELECT u.*, r.slug AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.username = ?',
+    [$moduleDeanUsername]
+);
+$newModuleDeanId = $moduleDeanRow ? (int) $moduleDeanRow['id'] : 0;
+check($moduleDeanRow !== null && $moduleDeanRow['role'] === 'dean', 'the invited account holds the Dean role');
+$moduleInviteAfter = Database::fetch('SELECT * FROM registration_invites WHERE id = ?', [(int) ($moduleInviteRow['id'] ?? 0)]);
+check((int) ($moduleInviteAfter['used_count'] ?? 0) === 1, 'redeeming the module invitation consumes one use');
+
+clearRateLimit('auth.dean_signup');
+$token = $deanSession->csrf('/dean/administrators');
+$revokeModuleInvite = $deanSession->post('/dean/administrators/invites', [
+    '_token' => $token,
+    'max_uses' => '1',
+    'valid_days' => '1',
+    'note' => 'E2E module revoke',
+], true);
+$revokeModuleCode = '';
+if (preg_match('/id="generatedAdminInvite"[^>]*value="([^"]+)"/', $revokeModuleInvite['body'], $m)) {
+    $revokeModuleCode = html_entity_decode($m[1], ENT_QUOTES);
+}
+$revokeModuleRow = Database::fetch('SELECT * FROM registration_invites WHERE note = ? ORDER BY id DESC LIMIT 1', ['E2E module revoke']);
+check($revokeModuleCode !== '' && $revokeModuleRow !== null, 'a second module invitation can be created');
+$token = $deanSession->csrf('/dean/administrators');
+$moduleRevoked = $deanSession->post('/dean/administrators/invites/' . (int) ($revokeModuleRow['id'] ?? 0) . '/revoke', ['_token' => $token], true);
+check(str_contains($moduleRevoked['body'], 'Invitation code revoked'), 'a Dean can revoke an invitation from the module');
+$revokedModuleClient = new Http($base);
+$revokedModuleTry = $revokedModuleClient->post('/dean-signup', array_merge($deanApplication, [
+    '_token' => $revokedModuleClient->csrf('/dean-signup'),
+    'username' => 'e2e.module.revoked.' . $suffix2,
+    'email' => 'e2e.module.revoked.' . $suffix2 . '@example.test',
+    'employee_number' => 'DEAN-MODREV-' . $suffix2,
+    'invitation_code' => $revokeModuleCode,
+]), true);
+check(str_contains($revokedModuleTry['body'], 'invalid or no longer available'), 'a revoked module invitation cannot be redeemed');
+check(Database::fetch('SELECT id FROM users WHERE username = ?', ['e2e.module.revoked.' . $suffix2]) === null, 'the revoked module code creates no account');
 
 echo "\nInvitation revocation\n";
 $token = $developer->csrf('/developer/' . rawurlencode($developerKey));
@@ -707,6 +915,7 @@ $revokeId = $revokeRow ? (int) $revokeRow['id'] : 0;
 $token = $developer->csrf('/developer/' . rawurlencode($developerKey));
 $revoked = $developer->post('/developer/' . rawurlencode($developerKey) . '/invites/' . $revokeId . '/revoke', ['_token' => $token], true);
 check($revoked['status'] === 200 && str_contains($revoked['body'], 'Invitation code revoked'), 'invitation can be revoked from the developer console');
+clearRateLimit('auth.dean_signup');
 $revokedClient = new Http($base);
 $revokedTry = $revokedClient->post('/dean-signup', array_merge($deanApplication, [
     '_token' => $revokedClient->csrf('/dean-signup'),
@@ -718,17 +927,17 @@ $revokedTry = $revokedClient->post('/dean-signup', array_merge($deanApplication,
 check(str_contains($revokedTry['body'], 'invalid or no longer available'), 'revoked invitation cannot be redeemed');
 check(Database::fetch('SELECT id FROM users WHERE username = ?', ['e2e.dean.revoked.' . $suffix2]) === null, 'revoked code creates no account');
 
-$testUserIds = array_values(array_filter([$newDeanId, $newInstructorId]));
+$testUserIds = array_values(array_filter([$newDeanId, $newInstructorId, $newHeadId, $newModuleDeanId]));
 if ($testUserIds !== []) {
     $userPlaceholders = implode(',', array_fill(0, count($testUserIds), '?'));
     Database::execute('DELETE FROM audit_logs WHERE user_id IN (' . $userPlaceholders . ') OR entity_id IN (' . $userPlaceholders . ')', array_merge($testUserIds, $testUserIds));
-    Database::execute('DELETE FROM login_attempts WHERE username IN (?, ?)', [$deanUsername, $instructorUsername]);
+    Database::execute('DELETE FROM login_attempts WHERE username IN (?, ?, ?, ?)', [$deanUsername, $instructorUsername, $headUsername, $moduleDeanUsername]);
     Database::execute('DELETE FROM users WHERE id IN (' . $userPlaceholders . ')', $testUserIds);
 }
-if ($inviteRow || $revokeRow) {
-    Database::execute('DELETE FROM registration_invites WHERE note IN (?, ?)', ['E2E Dean invitation', 'E2E revoke']);
+if ($inviteRow || $revokeRow || $moduleInviteRow || $revokeModuleRow) {
+    Database::execute('DELETE FROM registration_invites WHERE note IN (?, ?, ?, ?)', ['E2E Dean invitation', 'E2E revoke', 'E2E module invitation', 'E2E module revoke']);
 }
-Database::execute('DELETE FROM rate_limits WHERE bucket IN ("auth.dean_signup", "developer.invite")');
+Database::execute('DELETE FROM rate_limits WHERE bucket IN ("auth.dean_signup", "developer.invite", "administrator.create", "administrator.invite")');
 Database::execute('UPDATE system_settings SET setting_value = ? WHERE setting_key = "allow_dean_signup"', [$originalDeanSignup]);
 
 echo "\n" . str_repeat('-', 58) . "\n";

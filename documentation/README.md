@@ -4,6 +4,8 @@ This folder is part of the application source but is denied to web requests by `
 
 ## Reading order
 
+0. **`DEVELOPMENT_PROGRESS.md`** — milestone status, completed modules, known defects, and the next tasks.
+0. **`RESEARCH_REQUIREMENTS_TRACEABILITY.md`** — the ten research objectives mapped to modules, status, and evidence.
 1. **`architecture.md`** — how a request flows through the application and where responsibilities live.
 2. **`database.md`** - the 44-table schema, key relationships, migrations, and demo/live scoping.
 3. **`rbac.md`** — who may do what, and where authorization is enforced.
