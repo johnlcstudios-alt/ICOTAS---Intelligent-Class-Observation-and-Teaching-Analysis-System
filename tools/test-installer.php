@@ -110,6 +110,8 @@ try {
     $local = require $configPath;
     check(($local['database']['database'] ?? '') === $database, 'config/local.php points at the installed database');
     check(strlen((string) ($local['app']['key'] ?? '')) === 64, 'application key generated');
+    $developerKey = (string) ($local['app']['developer_key'] ?? '');
+    check(strlen($developerKey) === 48 && str_contains($html, '/developer/' . $developerKey), 'developer key generated and shown once');
     check(($local['app']['environment'] ?? '') === 'production', 'production environment set');
 } catch (Throwable $e) {
     $failures++;

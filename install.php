@@ -13,6 +13,7 @@ define('BASE_PATH', __DIR__);
 
 $configPath = __DIR__ . '/config/local.php';
 $lockPath = __DIR__ . '/storage/installed.lock';
+$developerKey = '';
 $schemaPath = __DIR__ . '/database/schema.sql';
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -342,6 +343,7 @@ if (!$locked && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $localConfig = [
                 'app' => [
                     'key' => bin2hex(random_bytes(32)),
+                    'developer_key' => bin2hex(random_bytes(24)),
                     'debug' => false,
                     'base_url' => $form['site_url'] !== '' ? rtrim($form['site_url'], '/') : '',
                     'environment' => 'production',
@@ -384,12 +386,13 @@ if (!$locked && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 'installed_at' => date('c'),
                 'php_version' => PHP_VERSION,
                 'application' => 'ICOTAS',
-                'version' => '2.0.0',
+                'version' => '2.1.0',
             ];
             if (@file_put_contents($lockPath, json_encode($lock, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX) === false) {
                 $warnings[] = 'Installation completed, but storage/installed.lock could not be written. Delete install.php immediately.';
             }
             $installed = true;
+            $developerKey = (string) $localConfig['app']['developer_key'];
             $_SESSION['installer_csrf'] = bin2hex(random_bytes(32));
         } catch (Throwable $installError) {
             $errors[] = $installError->getMessage();
@@ -410,18 +413,18 @@ $csrf = (string) $_SESSION['installer_csrf'];
     <meta name="robots" content="noindex, nofollow">
     <title>ICOTAS Installer</title>
     <style>
-        :root { --maroon: #701c2b; --maroon-dark: #4d101c; --gold: #c9a227; --ink: #241a1d; --muted: #667085; --line: #e5e0d8; --ok: #146c43; --bad: #b42318; }
+        :root { --blue: #144a9c; --blue-dark: #0b2f6b; --red: #c62828; --ink: #16202e; --muted: #5f6b7a; --line: #dfe5ee; --ok: #146c43; --bad: #b42318; }
         * { box-sizing: border-box; }
-        body { margin: 0; font-family: "Segoe UI", system-ui, -apple-system, sans-serif; background: #f6f3ee; color: var(--ink); line-height: 1.5; }
-        a { color: var(--maroon); }
+        body { margin: 0; font-family: "Segoe UI", system-ui, -apple-system, sans-serif; background: #f4f7fb; color: var(--ink); line-height: 1.5; }
+        a { color: var(--blue); }
         .shell { max-width: 1080px; margin: 0 auto; padding: 2rem 1rem 4rem; }
         .brand { display: flex; align-items: center; gap: .8rem; margin-bottom: 1.5rem; }
-        .brand-mark { width: 46px; height: 46px; border-radius: 12px; background: var(--maroon); color: #fff; display: grid; place-items: center; font-weight: 800; font-family: Georgia, serif; }
+        .brand-mark { width: 46px; height: 46px; border-radius: 12px; background: linear-gradient(135deg, var(--blue), var(--blue-dark)); color: #fff; display: grid; place-items: center; font-weight: 800; font-family: Georgia, serif; }
         .brand strong { display: block; font-family: Georgia, serif; font-size: 1.25rem; }
         .brand small { color: var(--muted); }
         .grid { display: grid; grid-template-columns: 1.35fr .85fr; gap: 1.25rem; align-items: start; }
-        .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 8px 24px rgba(50, 35, 30, .06); overflow: hidden; }
-        .card-head { padding: 1rem 1.2rem; border-bottom: 1px solid var(--line); background: #fcfaf7; }
+        .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 8px 24px rgba(16, 32, 60, .07); overflow: hidden; }
+        .card-head { padding: 1rem 1.2rem; border-bottom: 1px solid var(--line); background: #f7faff; }
         .card-head h2 { font-family: Georgia, serif; font-size: 1.1rem; margin: 0; }
         .card-head p { margin: .25rem 0 0; color: var(--muted); font-size: .82rem; }
         .card-body { padding: 1.2rem; }
@@ -429,15 +432,15 @@ $csrf = (string) $_SESSION['installer_csrf'];
         .lead { color: var(--muted); margin: 0 0 1.4rem; max-width: 70ch; }
         .steps { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1.2rem; }
         .step { font-size: .72rem; border: 1px solid var(--line); border-radius: 999px; padding: .28rem .7rem; color: var(--muted); background: #fff; }
-        .step.on { background: var(--maroon); border-color: var(--maroon); color: #fff; }
+        .step.on { background: var(--blue); border-color: var(--blue); color: #fff; }
         .field { margin-bottom: .85rem; }
         label { display: block; font-size: .78rem; font-weight: 600; margin-bottom: .3rem; }
-        input { width: 100%; border: 1px solid #cfc7bb; border-radius: 9px; padding: .58rem .7rem; font: inherit; background: #fff; }
-        input:focus { outline: 2px solid rgba(112, 28, 43, .22); border-color: var(--maroon); }
+        input { width: 100%; border: 1px solid #cfd8e6; border-radius: 9px; padding: .58rem .7rem; font: inherit; background: #fff; }
+        input:focus { outline: 2px solid rgba(20, 74, 156, .22); border-color: var(--blue); }
         .row { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
         .row-3 { display: grid; grid-template-columns: 1.2fr .35fr 1fr; gap: .8rem; }
         .help { font-size: .72rem; color: var(--muted); margin-top: .25rem; }
-        .req { display: flex; gap: .6rem; padding: .5rem 0; border-bottom: 1px solid #f1ede6; font-size: .8rem; }
+        .req { display: flex; gap: .6rem; padding: .5rem 0; border-bottom: 1px solid #eef1f6; font-size: .8rem; }
         .req:last-child { border-bottom: 0; }
         .req .mark { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: .68rem; font-weight: 700; color: #fff; }
         .req .mark.ok { background: var(--ok); }
@@ -449,14 +452,14 @@ $csrf = (string) $_SESSION['installer_csrf'];
         .alert-warn { background: #fffbeb; border-color: #f2dfa2; color: #6b4a06; }
         .alert-ok { background: #f0fdf4; border-color: #b7e4c7; color: #14532d; }
         .alert ul { margin: .3rem 0 0; padding-left: 1.1rem; }
-        .btn { display: inline-block; border: 0; border-radius: 9px; padding: .7rem 1.1rem; background: var(--maroon); color: #fff; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
-        .btn:hover { background: var(--maroon-dark); }
+        .btn { display: inline-block; border: 0; border-radius: 9px; padding: .7rem 1.1rem; background: var(--blue); color: #fff; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+        .btn:hover { background: var(--blue-dark); }
         .btn:disabled { opacity: .5; cursor: not-allowed; }
-        .btn-link { background: transparent; color: var(--maroon); padding-left: 0; }
+        .btn-link { background: transparent; color: var(--red); padding-left: 0; }
         .actions { display: flex; flex-wrap: wrap; gap: .8rem; align-items: center; margin-top: 1rem; }
         .fine { font-size: .72rem; color: var(--muted); }
         .section-title { font-size: .72rem; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); margin: 1.2rem 0 .6rem; font-weight: 700; }
-        code { font-family: ui-monospace, Consolas, monospace; background: #f4f1eb; padding: .1rem .3rem; border-radius: 4px; font-size: .78em; }
+        code { font-family: ui-monospace, Consolas, monospace; background: #f2f6fc; padding: .1rem .3rem; border-radius: 4px; font-size: .78em; }
         .manual { font-size: .78rem; color: var(--muted); }
         .manual ol { padding-left: 1.1rem; }
         @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
@@ -496,6 +499,21 @@ $csrf = (string) $_SESSION['installer_csrf'];
                         <li>Delete <code>install.php</code> from the server.</li>
                     </ul>
                 </div>
+                <?php if ($developerKey !== ''): ?>
+                    <?php
+                    $installBase = $form['site_url'] !== ''
+                        ? rtrim($form['site_url'], '/')
+                        : ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http')
+                            . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')
+                            . rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/install.php')), '/'));
+                    $developerUrl = $installBase . '/developer/' . rawurlencode($developerKey);
+                    ?>
+                    <div class="alert alert-warn">
+                        <strong>Private developer page (save this URL now)</strong>
+                        <p style="margin:.35rem 0">This page creates Dean invitation codes. It is not linked anywhere in ICOTAS. Anyone with the exact URL can issue codes, so treat it like a password.</p>
+                        <p style="margin:0;word-break:break-all"><code><?= h($developerUrl) ?></code></p>
+                    </div>
+                <?php endif; ?>
                 <a class="btn" href="index.php">Open ICOTAS sign-in</a>
             </div>
         </div>

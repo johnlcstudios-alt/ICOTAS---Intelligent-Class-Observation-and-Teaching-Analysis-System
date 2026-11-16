@@ -11,7 +11,7 @@ $groups = [
     'academic' => ['label' => 'Current academic period', 'icon' => 'bi-calendar3', 'note' => 'Used as the default period for evaluation assignments and dashboards.'],
     'privacy' => ['label' => 'Privacy and anonymity', 'icon' => 'bi-shield-lock', 'note' => 'Controls when anonymized comment excerpts may be displayed.'],
     'prediction' => ['label' => 'Prediction thresholds', 'icon' => 'bi-activity', 'note' => 'Rule-based classification thresholds. Changing these values changes future indicators only.'],
-    'evaluation' => ['label' => 'Evaluation access', 'icon' => 'bi-qr-code', 'note' => 'Controls student portal access and default QR session duration.'],
+    'evaluation' => ['label' => 'Evaluation access', 'icon' => 'bi-qr-code', 'note' => 'Controls student portal access, self-registration, Dean invitation registration and default QR session duration.'],
 ];
 $grouped = [];
 foreach ($definitions as $key => $definition) {
@@ -30,6 +30,8 @@ $defaults = [
     'prediction_negative_ratio' => '0.30',
     'prediction_forecast_change' => '0.10',
     'allow_student_self_scan' => '1',
+    'allow_student_signup' => '1',
+    'allow_dean_signup' => '1',
     'default_session_minutes' => '120',
 ];
 ?>

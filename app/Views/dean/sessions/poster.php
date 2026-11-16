@@ -7,9 +7,9 @@
 ?>
 <style>
     .qr-poster { max-width: 720px; margin: 0 auto; text-align: center; }
-    .qr-poster .poster-brand { font-family: Georgia, serif; font-size: 1.15rem; color: #701c2b; font-weight: 700; }
-    .qr-poster .poster-institution { font-size: .8rem; color: #666; letter-spacing: .08em; text-transform: uppercase; }
-    .qr-poster h1 { font-family: Georgia, serif; color: #701c2b; font-size: 2rem; margin: 1rem 0 .25rem; }
+    .qr-poster .poster-brand { font-family: Georgia, serif; font-size: 1.15rem; color: #144a9c; font-weight: 700; }
+    .qr-poster .poster-institution { font-size: .8rem; color: #5f6b7a; letter-spacing: .08em; text-transform: uppercase; }
+    .qr-poster h1 { font-family: Georgia, serif; color: #c62828; font-size: 2rem; margin: 1rem 0 .25rem; }
     .qr-poster .poster-meta { font-size: .95rem; color: #444; }
     .qr-poster .poster-qr { display: inline-block; border: 10px solid #fff; box-shadow: 0 0 0 1px #ddd; margin: 1.2rem 0; }
     .qr-poster .poster-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 2.4rem; font-weight: 700; letter-spacing: .18em; color: #1c1415; }

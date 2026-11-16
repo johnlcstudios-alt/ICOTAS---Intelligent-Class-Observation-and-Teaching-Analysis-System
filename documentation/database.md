@@ -3,24 +3,25 @@
 ## 1. Overview
 
 - **Engine:** InnoDB, `utf8mb4` / `utf8mb4_unicode_ci`.
-- **Objects:** 43 tables plus seed rows in `roles`, `system_settings`, `prediction_configurations`, and `uat_reference_results`.
+- **Objects:** 44 tables plus seed rows in `roles`, `system_settings`, `prediction_configurations`, and `uat_reference_results`.
 - **Access:** PDO with native prepared statements and exceptions. Identifiers are never interpolated from user input; the few dynamic identifiers are validated against fixed allowlists.
-- **Schema file:** `database/schema.sql`, imported by `install.php` or phpMyAdmin.
-- **Migrations:** None. Schema changes require a reviewed SQL patch and a new import for fresh installs. Back up before upgrading an existing database.
+- **Schema file:** `database/schema.sql`, imported by `install.php` or phpMyAdmin. Fresh installs already include every change below.
+- **Migrations:** reviewed SQL patches in `database/migrations/` for existing installations. Back up before upgrading. See section 7.
 
 `database/schema.sql` is idempotent (`CREATE TABLE IF NOT EXISTS`, `INSERT ... ON DUPLICATE KEY UPDATE` for settings). It does not drop existing tables.
 
 ## 2. Table groups
 
-### Identity and governance (8)
+### Identity and governance (9)
 
 | Table | Purpose |
 |---|---|
 | `roles` | `dean`, `academic_head`, `instructor`, `student` |
-| `users` | Accounts, role, academic placement, status, `is_demo`, password hash |
+| `users` | Accounts, role, academic placement, status, `is_demo`, password hash, `must_change_password`. Includes Dean-issued, invited-Dean, and self-registered student accounts. |
 | `user_sessions` | Server-side session metadata and revocation support |
 | `login_attempts` | Per-account/IP failure history for throttling |
-| `rate_limits` | Network-level request buckets (for example `auth.login`) |
+| `rate_limits` | Network-level request buckets (for example `auth.login`, `auth.signup`, `auth.dean_signup`, `developer.invite`) |
+| `registration_invites` | SHA-256-hashed Dean invitation codes with usage limit, expiry, revocation, and creator |
 | `password_reset_tokens` | Reserved table; no public reset flow is exposed in this build |
 | `audit_logs` | Actor, action, entity, description, hashed IP, timestamp |
 | `notifications` | In-app user notifications; no email transport |
@@ -137,6 +138,9 @@ Scope rules:
 
 - The active scope is `system_settings.demo_mode` (`1` = demo, `0` = live).
 - Records with `is_demo` are filtered in list, edit, analytics, prediction, report, and QR flows.
+- Self-registered student accounts are always `is_demo = 0`; public registration is blocked while demo mode is active.
+- Invited Dean accounts are always `is_demo = 0`; Dean registration is blocked while demo mode is active.
+- Self-registration does not create enrollment or `evaluation_participation` rows. Eligibility remains an instructor-controlled decision.
 - `evaluation_participation` inherits scope from its session.
 - `evaluation_responses` inherits scope from its session.
 - `response_answers`, `sentiment_results`, and `feedback_themes` inherit scope through their response.
@@ -166,7 +170,33 @@ See `demo-data.md` for reset behavior.
 - Aggregates use SQL `AVG`, `COUNT`, and grouped queries; no aggregate is stored as a substitute for source rows.
 - Reports and analytics read the same source tables as the dashboards, so totals reconcile.
 
-## 7. Backup and restore
+## 7. Schema migrations
+
+Existing installations upgrade in place with the SQL patches in `database/migrations/`. Back up the database and `config/local.php` first.
+
+| Migration | Purpose |
+|---|---|
+| `2026_11_10_dean_invites_and_forced_password.sql` | Adds `users.must_change_password`, creates `registration_invites`, seeds `allow_dean_signup = 1` |
+
+Run it once with phpMyAdmin or the MySQL client **before** deploying the matching application files:
+
+```powershell
+Get-Content database\migrations\2026_11_10_dean_invites_and_forced_password.sql -Raw |
+  C:\xampp\mysql\bin\mysql.exe -u root icotas
+```
+
+The migration is intentionally not idempotent for `ALTER TABLE`: re-running it fails loudly instead of silently leaving a half-upgraded schema. Verify with:
+
+```sql
+SELECT COUNT(*) FROM information_schema.tables
+ WHERE table_schema = DATABASE() AND table_name = 'registration_invites';
+SHOW COLUMNS FROM users LIKE 'must_change_password';
+SELECT setting_key, setting_value FROM system_settings WHERE setting_key = 'allow_dean_signup';
+```
+
+Expected on this release: one table, one column, and `allow_dean_signup = 1`. Fresh installs from `database/schema.sql` do not run this file.
+
+## 8. Backup and restore
 
 Back up both the database and `config/local.php` (the application key is required to decrypt re-displayable QR/UAT tokens).
 

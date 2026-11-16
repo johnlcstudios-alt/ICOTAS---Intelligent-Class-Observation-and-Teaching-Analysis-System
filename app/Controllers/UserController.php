@@ -57,8 +57,8 @@ final class UserController extends BaseController
     {
         $this->requirePost();
         $role = $this->postString('role');
-        $data = $this->validatedUserData();
-        $data['password_hash'] = password_hash($this->postString('password'), PASSWORD_DEFAULT);
+        $isInstructor = $role === 'instructor';
+        $data = $this->validatedUserData(null, !$isInstructor);
         $data['role_id'] = $this->roleId($role);
 
         if ($this->exists('username', $data['username']) || $this->exists('email', $data['email'])) {
@@ -74,10 +74,31 @@ final class UserController extends BaseController
             $this->error('That employee number is already registered.', 'dean/users/create');
         }
 
+        $temporaryPassword = null;
+        if ($isInstructor) {
+            $temporaryPassword = Security::temporaryPassword();
+            $data['password_hash'] = password_hash($temporaryPassword, PASSWORD_DEFAULT);
+            $data['must_change_password'] = 1;
+        } else {
+            $data['password_hash'] = password_hash($this->postString('password'), PASSWORD_DEFAULT);
+            $data['must_change_password'] = 0;
+        }
+
         $data['is_demo'] = $this->demo() ? 1 : 0;
         $data['status'] = $this->postString('status', 'active');
         $id = $this->users->createAccount($data);
         $this->audit('user.create', 'user', $id, 'Created account ' . $data['username'] . ' (' . $role . ')');
+
+        if ($temporaryPassword !== null) {
+            Session::set('_generated_credentials', [
+                'user_id' => $id,
+                'username' => $data['username'],
+                'password' => $temporaryPassword,
+                'role' => 'Instructor',
+            ]);
+            $this->success('Instructor account created. Copy the temporary password now — it is shown only once.', 'dean/users/' . $id . '/edit');
+        }
+
         $this->success('Account created successfully.', 'dean/users/' . $id . '/edit');
     }
 
@@ -87,7 +108,13 @@ final class UserController extends BaseController
         if (!$user) {
             abort(404);
         }
-        $this->view('dean/users/form', $this->formData($user));
+        $generated = Session::pull('_generated_credentials');
+        if (!is_array($generated) || (int) ($generated['user_id'] ?? 0) !== (int) $id) {
+            $generated = null;
+        }
+        $data = $this->formData($user);
+        $data['generatedCredentials'] = $generated;
+        $this->view('dean/users/form', $data);
     }
 
     public function update(string $id): void
@@ -174,8 +201,8 @@ final class UserController extends BaseController
             $this->error('The password confirmation does not match.', 'dean/users/' . $id . '/edit');
         }
         $this->users->resetPassword($id, $password);
-        $this->audit('user.password_reset', 'user', $id, 'Administrator reset the account password');
-        $this->success('Password reset. Existing sessions for this account were signed out.', 'dean/users/' . $id . '/edit');
+        $this->audit('user.password_reset', 'user', $id, 'Administrator reset the account password; a change is required at next sign-in');
+        $this->success('Password reset. Existing sessions were signed out, and the account must choose a new password at next sign-in.', 'dean/users/' . $id . '/edit');
     }
 
     public function importForm(): void
@@ -335,7 +362,7 @@ final class UserController extends BaseController
         ];
     }
 
-    private function validatedUserData(?int $ignoreId = null): array
+    private function validatedUserData(?int $ignoreId = null, bool $requirePassword = true): array
     {
         $data = [
             'username' => $this->postString('username'),
@@ -364,7 +391,7 @@ final class UserController extends BaseController
             Session::set('_old', $this->inputAll());
             $this->error((string) $validator->firstError(), $back);
         }
-        if ($ignoreId === null) {
+        if ($ignoreId === null && $requirePassword) {
             $password = (string) $this->input('password', '');
             $problem = Security::passwordProblem($password);
             if ($problem !== null) {

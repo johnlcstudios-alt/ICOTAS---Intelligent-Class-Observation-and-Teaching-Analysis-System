@@ -9,6 +9,7 @@
 return [
     'app' => [
         'key' => 'replace-with-64-hex-characters',
+        'developer_key' => 'replace-with-a-random-developer-key',
         'debug' => false,
         'base_url' => '',
         'environment' => 'production',

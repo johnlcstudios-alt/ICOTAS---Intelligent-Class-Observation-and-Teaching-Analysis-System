@@ -9,7 +9,9 @@
 | `instructor` | Instructor | Own teaching data only |
 | `student` | Student | Own evaluation portal, eligible sessions only |
 
-Public access is limited to `/`, `/login`, `/uat/respond/{token}` (invitation-controlled UAT), and static assets. `/evaluate/{token}` requires an authenticated student and per-session eligibility.
+Public access is limited to `/`, `/login`, `/signup` (when student self-registration is enabled), `/dean-signup` (when Dean invitation registration is enabled), `/uat/respond/{token}` (invitation-controlled UAT), and static assets. `/evaluate/{token}` requires an authenticated student and per-session eligibility.
+
+The developer console at `/developer/{key}` sits outside the user RBAC model: its credential is a high-entropy key in `config/local.php`, not a user session. It is not linked in navigation, is not a role, and returns 404 unless the exact key matches. Anyone holding that URL can issue Dean invitation codes, so it must be treated as a deployment secret.
 
 ## 2. Enforcement layers
 
@@ -56,6 +58,10 @@ Legend: ✅ allowed, — not available, ◐ limited to own records.
 | System settings | ✅ | — | — |
 | Demo data generate/reset | ✅ | — | — |
 | Student evaluation dashboard | — | — | ✅ |
+| Create a personal student account | — | — | ✅ when enabled and not in demo mode |
+| Self-register a Dean account with an invitation code | ✅ own account via `/dean-signup` | — | — |
+| Change own password | ✅ | ✅ | ✅ |
+| Issue or revoke Dean invitation codes | Developer URL key, not a user role | — | — |
 | QR scan, manual code, direct link | — | — | ✅ eligible sessions only |
 | Submit anonymous evaluation | — | — | ✅ once per session |
 | Evaluation history | — | — | ✅ own participation status only |
@@ -84,6 +90,7 @@ An instructor may **not**:
 
 A student may:
 
+- Create a personal account from `/signup` when the Dean has left registration enabled; this creates a student account only and does not enroll the student.
 - Sign in to the mobile-first portal.
 - See open evaluations for which a `pending` participation row exists.
 - Join by QR scan, direct link, or manual session code.
@@ -110,7 +117,8 @@ UAT invitations are intentionally public-by-token so external evaluators can res
 RBAC is covered by:
 
 - HTTP end-to-end checks: student receives 403 on dean and instructor dashboards.
-- Automated tests: instructor analytics are restricted to that instructor; qr/session and UAT access checks.
+- HTTP end-to-end onboarding checks: a wrong developer key returns 404, an invitation creates one live Dean account, single-use and revoked codes cannot be reused, and an instructor with a temporary password is confined to `/account/password`.
+- Automated tests: instructor analytics are restricted to that instructor; qr/session and UAT access checks; invitation hashing/consumption/revocation; forced-change flag lifecycle.
 - Smoke crawl: each role's own pages return HTTP 200.
 - Manual review: every protected route in `app/routes.php` carries middleware.
 

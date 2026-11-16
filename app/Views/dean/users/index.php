@@ -115,7 +115,12 @@ $total = (int) ($pagination['total'] ?? 0);
                                 <?php if (!empty($row['section_code'])): ?><span class="badge badge-soft"><?= e($row['section_code']) ?></span><?php endif; ?>
                                 <?php if (empty($row['department_code']) && empty($row['program_code']) && empty($row['section_code'])): ?>—<?php endif; ?>
                             </td>
-                            <td><?= status_badge((string) $row['status']) ?></td>
+                            <td>
+                                <?= status_badge((string) $row['status']) ?>
+                                <?php if ((int) ($row['must_change_password'] ?? 0) === 1): ?>
+                                    <span class="badge badge-warning" title="Must choose a new password at next sign-in">Temp password</span>
+                                <?php endif; ?>
+                            </td>
                             <td class="text-end">
                                 <div class="table-actions">
                                     <a class="btn btn-sm btn-outline-primary" href="<?= url('dean/users/' . (int) $row['id'] . '/edit') ?>"><i class="bi bi-pencil"></i> Edit</a>

@@ -92,6 +92,13 @@ final class Router
                         flash('error', 'Please sign in to continue.');
                         redirect('login');
                     }
+                    if (Auth::mustChangePassword() && !in_array(Request::path(), ['/account/password', '/logout'], true)) {
+                        if (Request::wantsJson()) {
+                            json_response(['success' => false, 'message' => 'Choose a new password before continuing.'], 403);
+                        }
+                        flash('warning', 'Your account is using a temporary password. Choose a new password to continue.');
+                        redirect('account/password');
+                    }
                     break;
                 case 'guest':
                     if (Auth::check()) {

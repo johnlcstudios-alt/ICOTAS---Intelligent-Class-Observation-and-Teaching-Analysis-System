@@ -17,7 +17,7 @@ $demo = Setting::demoMode();
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="<?= e(csrf_token()) ?>">
-    <meta name="theme-color" content="#701c2b">
+    <meta name="theme-color" content="#144a9c">
     <title><?= e($pageTitle ?? 'ICOTAS') ?> · <?= e(setting('system_name', 'ICOTAS')) ?></title>
     <link rel="stylesheet" href="<?= asset('vendor/bootstrap.min.css') ?>">
     <link rel="stylesheet" href="<?= asset('vendor/bootstrap-icons.css') ?>">
@@ -85,6 +85,7 @@ $demo = Setting::demoMode();
             <?php endif; ?>
             <span class="nav-label">Account</span>
             <a class="nav-link <?= active_nav('notifications') ?>" href="<?= url('notifications') ?>"><i class="bi bi-bell"></i> Notifications</a>
+            <a class="nav-link <?= active_nav('account/password') ?>" href="<?= url('account/password') ?>"><i class="bi bi-key"></i> Change password</a>
         </nav>
 
         <div class="sidebar-footer">

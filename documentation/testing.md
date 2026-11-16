@@ -56,8 +56,9 @@ C:\xampp\php\php.exe tools\e2e.php
 
 `tools/e2e.php` refuses to run unless the port is 8091 and the configured database is `icotas_test`.
 
-**Result: 55/55 checks passed.** It covers:
+**Result: 79/79 checks passed.** It covers:
 
+- Demo-mode registration gate and explanation.
 - Login redirect and success flash.
 - Student 403 on dean and instructor areas; student portal 200.
 - Department create/update/delete with scope inheritance.
@@ -70,6 +71,7 @@ C:\xampp\php\php.exe tools\e2e.php
 - Notifications read-all.
 - CSV export (content type, populated) and PDF export (`%PDF`, non-trivial size).
 - Demo reset: demo users/responses removed, live fixture survives, demo mode off.
+- Live self-registration: required-field and password-mismatch rejection, success, student role, `is_demo = 0`, active status, password hash, audit entry, duplicate username/student number, honeypot discard, CSRF 419, sign-in and portal access, and disabled-setting gate.
 
 ## 4. Authenticated route smoke crawl
 
@@ -110,13 +112,13 @@ Get-ChildItem app,config,tests,tools -Recurse -Filter *.php |
 
 ## 7. Release package verification
 
-The 2.0.0 archive was extracted to a clean directory and checked:
+The refreshed 2.0.0 archive (including student self-registration and the blue/red/white theme) was extracted to a clean directory and checked:
 
-- 176 files; no `config/local.php`, `storage/installed.lock`, `tests/`, `tools/`, `unit/`, or Git metadata.
-- All 123 packaged PHP files passed `php -l`.
-- Root `.htaccess` and all protected-directory `.htaccess` files are present in the archive.
-- The extracted copy booted on `http://127.0.0.1:8092`; `GET /login` returned 200 with the password form.
-- A test router emulating the shipped deny rules returned 403 for `/config/local.php` and `/storage/installed.lock`.
+- 177 files; no `config/local.php`, `storage/installed.lock`, `tests/`, `tools/`, `unit/`, or Git metadata.
+- All 124 packaged PHP files passed `php -l`.
+- Root `.htaccess` and all protected-directory `.htaccess` files are present in the archive. The root rules deny `app/`, `config/`, `database/`, `documentation/`, `storage/`, `tools/`, and `tests/`, plus hidden and sensitive file names.
+- The extracted copy booted on `http://127.0.0.1:8092`; `GET /login` returned 200 with the sign-in form and `GET /signup` returned 200 when demo mode was off.
+- No demo data, live credentials, runtime logs, or installed lock are included. `config/database.php` holds placeholder defaults; real credentials are supplied through the excluded `config/local.php`.
 
 These checks confirm archive completeness and bootability, not Apache `.htaccess` enforcement or InfinityFree behavior. Apache-level access controls remain part of the live-host checklist.
 
@@ -152,7 +154,7 @@ These checks confirm archive completeness and bootability, not Apache `.htaccess
 2. Ensure `config/local.php` points to a disposable local database.
 3. Run `tests/prepare.php`, then `tests/run.php`.
 4. Start the 8091 server with `ICOTAS_DB_DATABASE=icotas_test`.
-5. Run `tools/e2e.php`.
+5. Run `tests/prepare.php` again, then `tools/e2e.php` (the E2E suite expects fresh demo data and demo mode on).
 6. Run the three smoke presets against 8090.
 7. Record the exact output in the deployment log or manuscript appendix.
 

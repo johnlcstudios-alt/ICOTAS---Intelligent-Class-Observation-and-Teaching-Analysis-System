@@ -6,7 +6,7 @@ $demoMode = Setting::demoMode();
 <div class="mb-4">
     <span class="eyebrow">Secure institutional access</span>
     <h2 class="mt-1">Sign in to your workspace</h2>
-    <p class="text-muted">Use the account issued by your Dean or academic office. Access is limited by role.</p>
+    <p class="text-muted">Use your institutional account or the student account you registered. Access is limited by role.</p>
 </div>
 
 <form method="post" action="<?= url('login') ?>" class="needs-validation" novalidate>
@@ -44,12 +44,22 @@ $demoMode = Setting::demoMode();
         <ul class="list-clean mb-2">
             <li><span>Dean / Academic Head</span><code>demo.dean</code></li>
             <li><span>Instructor</span><code>demo.instructor.01</code></li>
-            <li><span>Student</span><code>demo.student.01</code></li>
+            <li><span>Student</span><code>demo.student.001</code></li>
         </ul>
         <p class="mb-0">Password for every demo account: <code>Demo@12345</code></p>
     </div>
 <?php endif; ?>
 
-<p class="text-center text-muted small mt-4 mb-0">
-    <i class="bi bi-info-circle"></i> Accounts are created by the academic office. There is no public self-registration.
+<?php if (!empty($signupEnabled)): ?>
+    <p class="text-center small mt-4 mb-0">
+        <i class="bi bi-person-plus"></i> New student? <a href="<?= url('signup') ?>">Create an account</a>
+    </p>
+<?php endif; ?>
+<?php if (!empty($deanSignupEnabled)): ?>
+    <p class="text-center small mt-3 mb-0">
+        <i class="bi bi-key"></i> Dean with an invitation code? <a href="<?= url('dean-signup') ?>">Register a Dean account</a>
+    </p>
+<?php endif; ?>
+<p class="text-center text-muted small mt-3 mb-0">
+    Instructor and staff accounts are issued by the Dean.
 </p>

@@ -62,6 +62,13 @@ final class Auth
         $_SESSION['_last_activity'] = time();
         Csrf::rotate();
 
+        // The request that submitted the form may have already cached the
+        // guest state (for example, the guest middleware calls Auth::check()).
+        // Clear that cache so role checks, forced-password handling and the
+        // post-login redirect see the account that just signed in.
+        self::$loaded = false;
+        self::$user = null;
+
         Database::execute(
             'INSERT INTO user_sessions (user_id, session_hash, ip_hash, user_agent, last_activity)
              VALUES (?, ?, ?, ?, NOW())
@@ -140,6 +147,12 @@ final class Auth
     public static function isDean(): bool
     {
         return self::role() === 'dean';
+    }
+
+    public static function mustChangePassword(): bool
+    {
+        $user = self::user();
+        return $user !== null && (int) ($user['must_change_password'] ?? 0) === 1;
     }
 
     public static function requireRole($roles): void

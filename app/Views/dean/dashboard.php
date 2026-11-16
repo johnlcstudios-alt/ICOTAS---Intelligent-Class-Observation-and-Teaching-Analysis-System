@@ -60,7 +60,7 @@ $sentimentValues = array_map(static fn ($r) => (int) $r['count'], $sentiment);
             <p class="hero-note mb-0"><?= (int) $counts['pending'] ?> student(s) still have a pending response.</p>
         </div>
         <div class="col-lg-2 text-lg-end">
-            <a class="btn btn-gold" href="<?= url('dean/analytics') ?>"><i class="bi bi-graph-up-arrow"></i> Explore analytics</a>
+            <a class="btn btn-hero" href="<?= url('dean/analytics') ?>"><i class="bi bi-graph-up-arrow"></i> Explore analytics</a>
         </div>
     </div>
 </div>

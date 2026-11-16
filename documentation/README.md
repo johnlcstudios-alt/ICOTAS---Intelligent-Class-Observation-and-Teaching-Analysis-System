@@ -5,7 +5,7 @@ This folder is part of the application source but is denied to web requests by `
 ## Reading order
 
 1. **`architecture.md`** — how a request flows through the application and where responsibilities live.
-2. **`database.md`** — the 43-table schema, key relationships, and demo/live scoping.
+2. **`database.md`** - the 44-table schema, key relationships, migrations, and demo/live scoping.
 3. **`rbac.md`** — who may do what, and where authorization is enforced.
 4. **`anonymity.md`** — how responses are separated from student identity and what remains risky.
 5. **`qr-lifecycle.md`** — token generation, states, display, revocation, and print.

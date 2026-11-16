@@ -30,11 +30,15 @@ if ($port !== 8091) {
     exit(2);
 }
 
+$developerKey = 'e2e-developer-key-7f3c9a';
+putenv('ICOTAS_DEVELOPER_KEY=' . $developerKey);
 putenv('ICOTAS_DB_DATABASE=icotas_test');
 require dirname(__DIR__) . '/app/bootstrap.php';
 
 use App\Core\Database;
+use App\Core\RateLimiter;
 use App\Core\Security;
+use App\Services\InviteService;
 use App\Services\QRService;
 
 if (config('database.database') !== 'icotas_test') {
@@ -147,8 +151,16 @@ final class Http
 
 $dean = new Http($base);
 $student = new Http($base);
+$guest = new Http($base);
 
-echo "Authentication and flash messages\n";
+echo "Student self-registration gate (demo mode)\n";
+$blocked = $guest->get('/signup');
+check($blocked['status'] === 302, 'signup redirects while demo mode is active', (string) $blocked['status']);
+check(str_contains($blocked['location'], '/login'), 'signup gate redirects to the sign-in page', $blocked['location']);
+$gatePage = $guest->get('/login');
+check(str_contains($gatePage['body'], 'demonstration mode is active'), 'demo-mode signup block explains why registration is closed');
+
+echo "\nAuthentication and flash messages\n";
 $login = $dean->login('demo.dean');
 check($login['status'] === 200, 'dean sign-in follows to a page', (string) $login['status']);
 check(str_contains($login['body'], 'Welcome back'), 'success flash is rendered after redirect');
@@ -201,6 +213,8 @@ $original = (string) Database::scalar('SELECT setting_value FROM system_settings
 $boolValues = [
     'privacy_show_comments' => (string) Database::scalar('SELECT setting_value FROM system_settings WHERE setting_key = "privacy_show_comments"', [], '0'),
     'allow_student_self_scan' => (string) Database::scalar('SELECT setting_value FROM system_settings WHERE setting_key = "allow_student_self_scan"', [], '0'),
+    'allow_student_signup' => (string) Database::scalar('SELECT setting_value FROM system_settings WHERE setting_key = "allow_student_signup"', [], '1'),
+    'allow_dean_signup' => (string) Database::scalar('SELECT setting_value FROM system_settings WHERE setting_key = "allow_dean_signup"', [], '1'),
 ];
 $saved = $dean->post('/dean/settings', array_merge([
     '_token' => $token,
@@ -375,6 +389,347 @@ check((int) Database::scalar('SELECT COUNT(*) FROM evaluation_responses r JOIN e
 check(Database::fetch('SELECT id FROM departments WHERE code = "LIVE-E2E"') !== null, 'live records survive demo reset');
 check((string) Database::scalar('SELECT setting_value FROM system_settings WHERE setting_key = "demo_mode"', [], '') === '0', 'demo mode is switched off');
 Database::execute('DELETE FROM departments WHERE code = "LIVE-E2E"');
+
+echo "\nStudent self-registration (live mode)\n";
+$signupClient = new Http($base);
+$page = $signupClient->get('/signup');
+check($page['status'] === 200, 'signup page opens in live mode', (string) $page['status']);
+check(str_contains($page['body'], 'Create your student account'), 'signup page renders the registration form');
+
+$suffix = (string) random_int(100000, 999999);
+$username = 'e2e.signup.' . $suffix;
+$email = $username . '@example.test';
+$studentNumber = 'SIGNUP-' . $suffix;
+$password = 'E2eStudent123';
+$newStudent = [
+    'first_name' => 'End-to-End',
+    'middle_name' => '',
+    'last_name' => 'Registrant',
+    'suffix' => '',
+    'username' => $username,
+    'email' => $email,
+    'student_number' => $studentNumber,
+    'password' => $password,
+    'password_confirmation' => $password,
+    'accept_terms' => '1',
+];
+
+$missing = $signupClient->post('/signup', ['_token' => $signupClient->csrf('/signup')], true);
+check(str_contains($missing['body'], 'First name is required'), 'missing required fields are rejected');
+
+$mismatch = $signupClient->post('/signup', array_merge($newStudent, [
+    '_token' => $signupClient->csrf('/signup'),
+    'password_confirmation' => 'DifferentPass123',
+]), true);
+check(str_contains($mismatch['body'], 'confirmation does not match'), 'password confirmation mismatch is rejected');
+
+$created = $signupClient->post('/signup', array_merge($newStudent, [
+    '_token' => $signupClient->csrf('/signup'),
+]), true);
+check($created['status'] === 200, 'valid registration follows to the sign-in page', (string) $created['status']);
+check(str_contains($created['body'], 'Account created'), 'registration success flash is shown');
+
+$row = Database::fetch(
+    'SELECT u.*, r.slug AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.username = ?',
+    [$username]
+);
+check($row !== null, 'self-registered account exists');
+$userId = $row ? (int) $row['id'] : 0;
+if ($row) {
+    check($row['role'] === 'student', 'self-registered account receives the student role');
+    check((int) $row['is_demo'] === 0, 'self-registered account is a live record');
+    check(strtolower((string) $row['status']) === 'active', 'self-registered account is active');
+    check(password_verify($password, $row['password_hash']), 'self-registered password hash verifies');
+}
+$audit = Database::fetch(
+    'SELECT * FROM audit_logs WHERE action = "user.signup" AND entity_id = ? ORDER BY id DESC LIMIT 1',
+    [$userId]
+);
+check($audit !== null, 'registration writes an audit record');
+
+$duplicateClient = new Http($base);
+$duplicate = $duplicateClient->post('/signup', array_merge($newStudent, [
+    '_token' => $duplicateClient->csrf('/signup'),
+    'email' => 'other.' . $email,
+    'student_number' => 'OTHER-' . $suffix,
+]), true);
+check(str_contains($duplicate['body'], 'already registered'), 'duplicate username is rejected');
+
+$duplicateNumber = $duplicateClient->post('/signup', array_merge($newStudent, [
+    '_token' => $duplicateClient->csrf('/signup'),
+    'username' => 'other.' . $username,
+    'email' => 'other.' . $email,
+]), true);
+check(str_contains($duplicateNumber['body'], 'student number is already registered'), 'duplicate student number is rejected');
+
+$honeypotClient = new Http($base);
+$honeypot = $honeypotClient->post('/signup', array_merge($newStudent, [
+    '_token' => $honeypotClient->csrf('/signup'),
+    'username' => 'e2e.honeypot.' . $suffix,
+    'email' => 'e2e.honeypot.' . $suffix . '@example.test',
+    'student_number' => 'HONEY-' . $suffix,
+    'website' => 'https://spam.example',
+]));
+check($honeypot['status'] === 302 && str_contains($honeypot['location'], '/login'), 'honeypot submissions are silently discarded');
+check((int) Database::scalar('SELECT COUNT(*) FROM users WHERE username = ?', ['e2e.honeypot.' . $suffix], 0) === 0, 'honeypot creates no account');
+
+$newStudentSession = new Http($base);
+$newLogin = $newStudentSession->login($username, $password);
+check($newLogin['status'] === 200, 'self-registered student can sign in', (string) $newLogin['status']);
+check(str_contains($newLogin['body'], 'My Evaluation Portal'), 'self-registered student reaches the student portal');
+
+$csrfRejected = (new Http($base))->post('/signup', [
+    'first_name' => 'No',
+    'last_name' => 'Token',
+    'username' => 'e2e.nocsrf.' . $suffix,
+    'email' => 'e2e.nocsrf.' . $suffix . '@example.test',
+    'student_number' => 'NOCSRF-' . $suffix,
+    'password' => $password,
+    'password_confirmation' => $password,
+    'accept_terms' => '1',
+]);
+check($csrfRejected['status'] === 419, 'registration requires a valid CSRF token', (string) $csrfRejected['status']);
+
+Database::execute('UPDATE system_settings SET setting_value = "0" WHERE setting_key = "allow_student_signup"');
+$closedClient = new Http($base);
+$closed = $closedClient->get('/signup');
+check($closed['status'] === 302, 'disabled signup redirects to sign-in', (string) $closed['status']);
+$closedPage = $closedClient->get('/login');
+check(str_contains($closedPage['body'], 'currently closed'), 'disabled signup explains that registration is closed');
+Database::execute('UPDATE system_settings SET setting_value = "1" WHERE setting_key = "allow_student_signup"');
+
+if ($userId > 0) {
+    Database::execute('DELETE FROM audit_logs WHERE action = "user.signup" AND entity_id = ?', [$userId]);
+    Database::execute('DELETE FROM users WHERE id = ?', [$userId]);
+}
+Database::execute('DELETE FROM rate_limits WHERE bucket = "auth.signup"');
+
+echo "\nDeveloper console and Dean invitation registration\n";
+$originalDeanSignup = (string) Database::scalar('SELECT setting_value FROM system_settings WHERE setting_key = "allow_dean_signup"', [], '1');
+Database::execute('UPDATE system_settings SET setting_value = "1" WHERE setting_key = "allow_dean_signup"');
+RateLimiter::clear('auth.dean_signup');
+RateLimiter::clear('developer.invite');
+
+$developer = new Http($base);
+$hidden = $developer->get('/developer/not-the-configured-key');
+check($hidden['status'] === 404, 'developer console hides itself for a wrong key', (string) $hidden['status']);
+$console = $developer->get('/developer/' . rawurlencode($developerKey));
+check($console['status'] === 200, 'developer console opens with the configured key', (string) $console['status']);
+check(str_contains($console['body'], 'Dean invitation codes'), 'developer console renders the invitation form');
+$guestLogin = (new Http($base))->get('/login');
+check(!str_contains($guestLogin['body'], '/developer/'), 'developer console is not linked from the sign-in page');
+
+$token = $developer->csrf('/developer/' . rawurlencode($developerKey));
+$inviteCreated = $developer->post('/developer/' . rawurlencode($developerKey), [
+    '_token' => $token,
+    'max_uses' => '1',
+    'valid_days' => '7',
+    'note' => 'E2E Dean invitation',
+], true);
+check($inviteCreated['status'] === 200, 'invitation creation follows to the console', (string) $inviteCreated['status']);
+check(str_contains($inviteCreated['body'], 'New invitation code'), 'new invitation code is displayed once');
+$inviteCode = '';
+if (preg_match('/id="generatedInvite"[^>]*value="([^"]+)"/', $inviteCreated['body'], $m)) {
+    $inviteCode = html_entity_decode($m[1], ENT_QUOTES);
+}
+check($inviteCode !== '', 'generated invitation code can be parsed');
+$inviteRow = Database::fetch('SELECT * FROM registration_invites WHERE note = ? ORDER BY id DESC LIMIT 1', ['E2E Dean invitation']);
+check($inviteRow !== null, 'invitation row exists');
+if ($inviteRow) {
+    check(strlen((string) $inviteRow['code_hash']) === 64, 'invitation stores a SHA-256 hash');
+    check(hash_equals((string) $inviteRow['code_hash'], InviteService::hash($inviteCode)), 'invitation hash matches the displayed code');
+}
+
+$suffix2 = (string) random_int(100000, 999999);
+$deanUsername = 'e2e.dean.' . $suffix2;
+$deanEmail = $deanUsername . '@example.test';
+$deanPassword = 'E2eDean123';
+$deanApplication = [
+    'first_name' => 'End-to-End',
+    'middle_name' => '',
+    'last_name' => 'Dean',
+    'suffix' => '',
+    'username' => $deanUsername,
+    'email' => $deanEmail,
+    'employee_number' => 'DEAN-' . $suffix2,
+    'password' => $deanPassword,
+    'password_confirmation' => $deanPassword,
+    'accept_terms' => '1',
+];
+
+$deanApplicant = new Http($base);
+$deanSignupPage = $deanApplicant->get('/dean-signup');
+check($deanSignupPage['status'] === 200, 'Dean signup page opens in live mode', (string) $deanSignupPage['status']);
+check(str_contains($deanSignupPage['body'], 'Create your Dean account'), 'Dean signup page renders the invitation form');
+
+$badCode = $deanApplicant->post('/dean-signup', array_merge($deanApplication, [
+    '_token' => $deanApplicant->csrf('/dean-signup'),
+    'invitation_code' => 'DEAN-AAAA-BBBB-CCCC',
+]), true);
+check(str_contains($badCode['body'], 'invalid or no longer available'), 'invalid invitation code is rejected');
+check(Database::fetch('SELECT id FROM users WHERE username = ?', [$deanUsername]) === null, 'invalid invitation creates no account');
+
+$createdDean = $deanApplicant->post('/dean-signup', array_merge($deanApplication, [
+    '_token' => $deanApplicant->csrf('/dean-signup'),
+    'invitation_code' => $inviteCode,
+]), true);
+check($createdDean['status'] === 200 && str_contains($createdDean['body'], 'Dean account created'), 'valid invitation creates a Dean account');
+$deanRow = Database::fetch(
+    'SELECT u.*, r.slug AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.username = ?',
+    [$deanUsername]
+);
+$newDeanId = $deanRow ? (int) $deanRow['id'] : 0;
+check($deanRow !== null, 'invited Dean account exists');
+if ($deanRow) {
+    check($deanRow['role'] === 'dean', 'invited account receives the Dean role');
+    check((int) $deanRow['is_demo'] === 0, 'invited Dean account is a live record');
+    check((int) $deanRow['must_change_password'] === 0, 'invited Dean chose their own password');
+    check(password_verify($deanPassword, $deanRow['password_hash']), 'invited Dean password hash verifies');
+}
+$inviteAfter = Database::fetch('SELECT * FROM registration_invites WHERE id = ?', [(int) ($inviteRow['id'] ?? 0)]);
+check((int) ($inviteAfter['used_count'] ?? 0) === 1, 'invitation use is consumed atomically');
+
+$reuseClient = new Http($base);
+$reuse = $reuseClient->post('/dean-signup', array_merge($deanApplication, [
+    '_token' => $reuseClient->csrf('/dean-signup'),
+    'username' => 'e2e.dean.reuse.' . $suffix2,
+    'email' => 'e2e.dean.reuse.' . $suffix2 . '@example.test',
+    'employee_number' => 'DEAN-REUSE-' . $suffix2,
+    'invitation_code' => $inviteCode,
+]), true);
+check(str_contains($reuse['body'], 'invalid or no longer available'), 'single-use invitation cannot be reused');
+check(Database::fetch('SELECT id FROM users WHERE username = ?', ['e2e.dean.reuse.' . $suffix2]) === null, 'reused code creates no second account');
+
+$deanSession = new Http($base);
+$deanLogin = $deanSession->login($deanUsername, $deanPassword);
+check($deanLogin['status'] === 200, 'invited Dean can sign in', (string) $deanLogin['status']);
+check(str_contains($deanLogin['body'], 'Welcome back'), 'invited Dean reaches the dashboard');
+
+echo "\nInstructor temporary password and forced change\n";
+$createPage = $deanSession->get('/dean/users/create');
+check($createPage['status'] === 200, 'Dean user form opens', (string) $createPage['status']);
+check(str_contains($createPage['body'], 'generated automatically'), 'instructor form explains automatic password generation');
+
+$instructorUsername = 'e2e.instructor.' . $suffix2;
+$instructorEmail = $instructorUsername . '@example.test';
+$token = $deanSession->csrf('/dean/users/create');
+$instructorCreated = $deanSession->post('/dean/users', [
+    '_token' => $token,
+    'username' => $instructorUsername,
+    'email' => $instructorEmail,
+    'first_name' => 'End-to-End',
+    'middle_name' => '',
+    'last_name' => 'Instructor',
+    'suffix' => '',
+    'employee_number' => 'EMP-' . $suffix2,
+    'student_number' => '',
+    'department_id' => '',
+    'program_id' => '',
+    'section_id' => '',
+    'year_level' => '',
+    'phone' => '',
+    'role' => 'instructor',
+    'status' => 'active',
+], true);
+check($instructorCreated['status'] === 200 && str_contains($instructorCreated['body'], 'Temporary instructor password'), 'created instructor shows a one-time password panel');
+$temporaryPassword = '';
+if (preg_match('/id="generatedPassword"[^>]*value="([^"]+)"/', $instructorCreated['body'], $m)) {
+    $temporaryPassword = html_entity_decode($m[1], ENT_QUOTES);
+}
+check($temporaryPassword !== '', 'temporary instructor password can be parsed');
+$instructorRow = Database::fetch(
+    'SELECT u.*, r.slug AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.username = ?',
+    [$instructorUsername]
+);
+$newInstructorId = $instructorRow ? (int) $instructorRow['id'] : 0;
+check($instructorRow !== null, 'instructor account exists');
+if ($instructorRow) {
+    check($instructorRow['role'] === 'instructor', 'created account receives the instructor role');
+    check((int) $instructorRow['must_change_password'] === 1, 'generated password requires a change');
+    check(password_verify($temporaryPassword, $instructorRow['password_hash']), 'generated password hash verifies');
+}
+$editAgain = $deanSession->get('/dean/users/' . $newInstructorId . '/edit');
+check(!str_contains($editAgain['body'], 'Temporary instructor password'), 'one-time password panel disappears after the redirect');
+
+$instructorSession = new Http($base);
+$forcedLogin = $instructorSession->login($instructorUsername, $temporaryPassword);
+check($forcedLogin['status'] === 200, 'instructor with temporary password can sign in', (string) $forcedLogin['status']);
+check(str_contains($forcedLogin['body'], 'Choose a new password'), 'temporary password redirects to the password form');
+check(str_contains($forcedLogin['url'], '/account/password'), 'forced-change URL is the account password page');
+$blocked = $instructorSession->get('/instructor/dashboard');
+check($blocked['status'] === 302, 'forced-change account cannot open the dashboard', (string) $blocked['status']);
+check(str_contains($blocked['location'], '/account/password'), 'dashboard access redirects back to the password form');
+
+$token = $instructorSession->csrf('/account/password');
+$wrongCurrent = $instructorSession->post('/account/password', [
+    '_token' => $token,
+    'current_password' => 'WrongPass123',
+    'password' => 'E2eInstructor456',
+    'password_confirmation' => 'E2eInstructor456',
+], true);
+check(str_contains($wrongCurrent['body'], 'current password is incorrect'), 'wrong current password is rejected');
+
+$newInstructorPassword = 'E2eInstructor456';
+$token = $instructorSession->csrf('/account/password');
+$changed = $instructorSession->post('/account/password', [
+    '_token' => $token,
+    'current_password' => $temporaryPassword,
+    'password' => $newInstructorPassword,
+    'password_confirmation' => $newInstructorPassword,
+], true);
+check($changed['status'] === 200 && str_contains($changed['body'], 'Password updated'), 'instructor changes the temporary password');
+check(str_contains($changed['url'], '/instructor/dashboard'), 'password change redirects to the instructor dashboard');
+
+$instructorAfter = Database::fetch('SELECT * FROM users WHERE id = ?', [$newInstructorId]);
+check((int) ($instructorAfter['must_change_password'] ?? 1) === 0, 'forced-change flag is cleared');
+check(password_verify($newInstructorPassword, $instructorAfter['password_hash']), 'new instructor password verifies');
+
+$oldLogin = (new Http($base))->login($instructorUsername, $temporaryPassword);
+check(str_contains($oldLogin['body'], 'Invalid credentials'), 'temporary password stops working after the change');
+$newLogin = (new Http($base))->login($instructorUsername, $newInstructorPassword);
+check($newLogin['status'] === 200 && str_contains($newLogin['body'], 'Welcome back'), 'instructor signs in with the chosen password');
+
+echo "\nInvitation revocation\n";
+$token = $developer->csrf('/developer/' . rawurlencode($developerKey));
+$revokeCreated = $developer->post('/developer/' . rawurlencode($developerKey), [
+    '_token' => $token,
+    'max_uses' => '1',
+    'valid_days' => '1',
+    'note' => 'E2E revoke',
+], true);
+$revokeCode = '';
+if (preg_match('/id="generatedInvite"[^>]*value="([^"]+)"/', $revokeCreated['body'], $m)) {
+    $revokeCode = html_entity_decode($m[1], ENT_QUOTES);
+}
+$revokeRow = Database::fetch('SELECT * FROM registration_invites WHERE note = ? ORDER BY id DESC LIMIT 1', ['E2E revoke']);
+check($revokeCode !== '' && $revokeRow !== null, 'second invitation can be created');
+$revokeId = $revokeRow ? (int) $revokeRow['id'] : 0;
+$token = $developer->csrf('/developer/' . rawurlencode($developerKey));
+$revoked = $developer->post('/developer/' . rawurlencode($developerKey) . '/invites/' . $revokeId . '/revoke', ['_token' => $token], true);
+check($revoked['status'] === 200 && str_contains($revoked['body'], 'Invitation code revoked'), 'invitation can be revoked from the developer console');
+$revokedClient = new Http($base);
+$revokedTry = $revokedClient->post('/dean-signup', array_merge($deanApplication, [
+    '_token' => $revokedClient->csrf('/dean-signup'),
+    'username' => 'e2e.dean.revoked.' . $suffix2,
+    'email' => 'e2e.dean.revoked.' . $suffix2 . '@example.test',
+    'employee_number' => 'DEAN-REVOKED-' . $suffix2,
+    'invitation_code' => $revokeCode,
+]), true);
+check(str_contains($revokedTry['body'], 'invalid or no longer available'), 'revoked invitation cannot be redeemed');
+check(Database::fetch('SELECT id FROM users WHERE username = ?', ['e2e.dean.revoked.' . $suffix2]) === null, 'revoked code creates no account');
+
+$testUserIds = array_values(array_filter([$newDeanId, $newInstructorId]));
+if ($testUserIds !== []) {
+    $userPlaceholders = implode(',', array_fill(0, count($testUserIds), '?'));
+    Database::execute('DELETE FROM audit_logs WHERE user_id IN (' . $userPlaceholders . ') OR entity_id IN (' . $userPlaceholders . ')', array_merge($testUserIds, $testUserIds));
+    Database::execute('DELETE FROM login_attempts WHERE username IN (?, ?)', [$deanUsername, $instructorUsername]);
+    Database::execute('DELETE FROM users WHERE id IN (' . $userPlaceholders . ')', $testUserIds);
+}
+if ($inviteRow || $revokeRow) {
+    Database::execute('DELETE FROM registration_invites WHERE note IN (?, ?)', ['E2E Dean invitation', 'E2E revoke']);
+}
+Database::execute('DELETE FROM rate_limits WHERE bucket IN ("auth.dean_signup", "developer.invite")');
+Database::execute('UPDATE system_settings SET setting_value = ? WHERE setting_key = "allow_dean_signup"', [$originalDeanSignup]);
 
 echo "\n" . str_repeat('-', 58) . "\n";
 echo "Checks: $checks  Failed: $failures\n";

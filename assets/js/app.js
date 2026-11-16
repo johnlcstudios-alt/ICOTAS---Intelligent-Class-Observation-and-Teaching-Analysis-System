@@ -110,13 +110,13 @@
         Chart.defaults.color = '#667085';
         Chart.defaults.plugins.legend.labels.usePointStyle = true;
         Chart.defaults.plugins.legend.labels.boxWidth = 8;
-        Chart.defaults.plugins.tooltip.backgroundColor = '#241a1d';
+        Chart.defaults.plugins.tooltip.backgroundColor = '#0b2f6b';
         Chart.defaults.plugins.tooltip.padding = 10;
         Chart.defaults.plugins.tooltip.cornerRadius = 8;
     }
 
     window.ICOTAS = {
-        palette: ['#701c2b', '#c9a227', '#2e7d6b', '#4f6d9a', '#a15c8a', '#b5651d', '#7a8b99'],
+        palette: ['#144a9c', '#c62828', '#0b6b81', '#5b8def', '#991b1b', '#98a2b3', '#ff8a80'],
         closeSidebar: closeSidebar
     };
 })();

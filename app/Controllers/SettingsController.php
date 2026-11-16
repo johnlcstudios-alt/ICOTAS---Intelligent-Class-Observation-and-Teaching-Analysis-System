@@ -22,6 +22,8 @@ final class SettingsController extends BaseController
         'prediction_negative_ratio' => ['group' => 'prediction', 'type' => 'decimal', 'label' => 'Negative sentiment ratio threshold', 'min' => 0, 'max' => 1],
         'prediction_forecast_change' => ['group' => 'prediction', 'type' => 'decimal', 'label' => 'Forecast change threshold', 'min' => 0, 'max' => 2],
         'allow_student_self_scan' => ['group' => 'evaluation', 'type' => 'bool', 'label' => 'Allow students to open an active evaluation from their portal'],
+        'allow_student_signup' => ['group' => 'evaluation', 'type' => 'bool', 'label' => 'Allow students to create their own accounts from the sign-in page'],
+        'allow_dean_signup' => ['group' => 'evaluation', 'type' => 'bool', 'label' => 'Allow Deans to register with a developer-issued invitation code'],
         'default_session_minutes' => ['group' => 'evaluation', 'type' => 'int', 'label' => 'Default QR session length (minutes)', 'min' => 5, 'max' => 43200],
         'current_academic_year_id' => ['group' => 'academic', 'type' => 'reference', 'label' => 'Current academic year', 'table' => 'academic_years'],
         'current_semester_id' => ['group' => 'academic', 'type' => 'reference', 'label' => 'Current semester', 'table' => 'semesters'],

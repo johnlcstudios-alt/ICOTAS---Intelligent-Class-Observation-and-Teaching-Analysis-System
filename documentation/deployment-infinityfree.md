@@ -60,7 +60,7 @@ unit/
 dist/
 ```
 
-A prepared package is produced as `dist/ICOTAS-InfinityFree-v2.0.0.zip` when the release step is run. Verify its hash before upload and keep the hash with the deployment record.
+A prepared package is produced as `dist/ICOTAS-InfinityFree-v2.1.0.zip` when the release step is run. Verify its hash before upload and keep the hash with the deployment record.
 
 ## 3. Create the database
 
@@ -107,16 +107,28 @@ In the control panel, choose the highest available PHP 8.x version. The code tar
    - First Dean: first name, last name, username, e-mail, strong password (12+ characters, 3 character classes)
 4. Submit.
 5. The installer:
-   - Imports `database/schema.sql` (43 tables).
+   - Imports `database/schema.sql` (44 tables).
    - Creates the Dean if no Dean exists.
    - Seeds 7 survey templates and the ISO/IEC 25010 UAT form.
-   - Writes `config/local.php` with a random application key.
+   - Writes `config/local.php` with a random application key and private developer key.
    - Writes `storage/installed.lock`.
+   - Displays the hidden developer URL **once**. Copy it before leaving the page; it is the only way to issue Dean invitation codes.
 6. If it reports a warning about default definitions, sign in and create them in the interface; the database is still installed.
 
 ### If the installer cannot write files
 
 The host may block PHP file writes. Use the manual fallback below. Do not repeatedly rerun the installer against a partially imported database.
+
+### Upgrading an existing 2.0.x installation
+
+Do not re-import `database/schema.sql` over an existing database and do not re-run `install.php`.
+
+1. Back up the database and `config/local.php`.
+2. In phpMyAdmin, run `database/migrations/2026_11_10_dean_invites_and_forced_password.sql` **before** uploading the new application files.
+3. Upload the new runtime files, keeping the server's existing `config/local.php`.
+4. Confirm `registration_invites` exists, `users.must_change_password` exists, and `allow_dean_signup` is `1`.
+5. If `config/local.php` has no `developer_key`, add one generated with `bin2hex(random_bytes(24))`; otherwise the developer page stays disabled.
+6. Sign in as Dean and verify existing accounts still work. New instructor accounts will receive temporary passwords; existing accounts are unaffected by the migration.
 
 ## 7. Post-installation (mandatory)
 
@@ -129,8 +141,10 @@ The host may block PHP file writes. Use the manual fallback below. Do not repeat
 7. Confirm **Demo Data** shows demo mode OFF and no demo records (the installer does not create demo data).
 8. Set the institution name, current academic year, and current semester.
 9. Create or import real users.
-10. Replace/remove any test accounts and set the privacy threshold to at least 3.
-11. Configure HTTPS and confirm the session cookie is secure.
+10. Decide whether student self-registration should remain enabled under **Settings → Evaluation access**. Disable `allow_student_signup` if accounts must be issued centrally; self-registered students are not auto-enrolled.
+11. Decide whether invitation-only Dean registration should stay enabled (`allow_dean_signup`). Store the private developer URL offline; it is never linked in the interface.
+12. Replace/remove any test accounts and set the privacy threshold to at least 3.
+13. Configure HTTPS and confirm the session cookie is secure.
 
 ## 8. Manual installation fallback
 
@@ -141,7 +155,7 @@ Use this if the browser installer is blocked or PHP cannot write `config/local.p
 1. Create the database in the control panel.
 2. Open phpMyAdmin for that database.
 3. Import `database/schema.sql`.
-4. Confirm 43 tables and the four roles (`dean`, `academic_head`, `instructor`, `student`) exist.
+4. Confirm 44 tables and the four roles (`dean`, `academic_head`, `instructor`, `student`) exist.
 
 ### 8.2 Create `config/local.php`
 
@@ -152,6 +166,7 @@ Copy `config/local.sample.php` to `config/local.php` on the server (or create th
 return [
     'app' => [
         'key' => '<64 random hex characters>',
+        'developer_key' => '<48 random hex characters>',
         'debug' => false,
         'base_url' => 'https://your-domain',
         'environment' => 'production',
@@ -171,9 +186,10 @@ Generate the key on your own computer with PHP:
 
 ```powershell
 C:\xampp\php\php.exe -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
+C:\xampp\php\php.exe -r "echo bin2hex(random_bytes(24)), PHP_EOL;"
 ```
 
-Do not reuse the sample key. Do not commit or share the real key.
+The first value is the application key; the second is `developer_key`, used only in the hidden URL `https://your-domain/developer/<developer_key>`. Store that URL offline. Do not reuse the sample keys. Do not commit or share the real values.
 
 ### 8.3 Create the first Dean
 
@@ -225,12 +241,16 @@ Perform on the live host and save the output/screenshots:
 - [ ] Create a QR session; session page shows QR and manual code.
 - [ ] Print poster opens; PNG download works in a desktop browser.
 - [ ] Student login; manual code opens the evaluation; submit one response.
+- [ ] Student self-registration works when enabled, or is deliberately disabled.
+- [ ] Dean invitation registration works with a test code; a reused, expired, or revoked code is rejected.
+- [ ] A new instructor receives a temporary password once and is forced to change it at first sign-in.
 - [ ] Reopen the link: duplicate guard appears.
 - [ ] Instructor login: own dashboard loads; dean URL returns 403.
 - [ ] Analytics and AI pages load without errors.
 - [ ] CSV and PDF exports download and open.
 - [ ] UAT survey creation and one invitation submission work.
 - [ ] `GET /config/local.php`, `/database/schema.sql`, `/storage/`, `/app/` are denied.
+- [ ] `GET /developer/` with a wrong key returns 404 and the developer page is not linked anywhere.
 - [ ] `install.php` is absent (404).
 - [ ] Error log is not web-readable.
 - [ ] Demo mode is OFF; no demo accounts remain.
@@ -283,22 +303,22 @@ Perform on the live host and save the output/screenshots:
 The current release was built on 2026-11-10:
 
 ```
-File: dist/ICOTAS-InfinityFree-v2.0.0.zip
-Files: 176
+File: dist/ICOTAS-InfinityFree-v2.1.0.zip
+Files: 177
 Included: runtime files only (index.php, install.php, .htaccess, app/,
           assets/, config/, database/, documentation/, storage skeleton)
 Excluded: config/local.php, storage runtime data, tests/, tools/, unit/,
           .git/, .freebuff/, dist/
 ```
 
-The SHA-256 is written to `dist/ICOTAS-InfinityFree-v2.0.0.sha256` after the
-archive is closed. A checksum cannot be embedded inside the archive it
+The SHA-256 is written to `dist/ICOTAS-InfinityFree-v2.1.0.sha256` after
+the archive is closed. A checksum cannot be embedded inside the archive it
 describes, so the companion `.sha256` file is the authoritative record. Verify
 before upload:
 
 ```powershell
-Get-FileHash .\ICOTAS-InfinityFree-v2.0.0.zip -Algorithm SHA256
-Get-Content .\ICOTAS-InfinityFree-v2.0.0.sha256
+Get-FileHash .\ICOTAS-InfinityFree-v2.1.0.zip -Algorithm SHA256
+Get-Content .\ICOTAS-InfinityFree-v2.1.0.sha256
 ```
 
 Keep the zip and checksum together in the deployment record. Regenerate the

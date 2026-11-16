@@ -70,12 +70,12 @@ Shared hosting has no cron. `QRService::refreshStatuses()` runs when evaluation 
 | `app/Core/` | Framework primitives: `Router`, `Request`, `Database`, `Auth`, `Csrf`, `Session`, `Security`, `Validator`, `View`, `Setting`, `RateLimiter` |
 | `app/Controllers/` | HTTP orchestration and authorization boundaries |
 | `app/Models/` | Focused queries for users, surveys, evaluations, analytics, UAT, audit |
-| `app/Services/` | Business rules: analytics, AI rules, predictions, QR, reports, UAT, demo data, notifications |
-| `app/Views/` | Layouts, partials, role-specific pages, printable reports/posters |
+| `app/Services/` | Business rules: analytics, AI rules, predictions, QR, reports, UAT, invitations, demo data, notifications |
+| `app/Views/` | Layouts, partials, role-specific pages, printable reports/posters, invitation console |
 | `app/Libraries/` | Vendored FPDF 1.9 + JSON font metrics |
 | `assets/` | Public static files only; PHP execution denied |
 | `config/` | `app.php`, `database.php`, `local.php` (secret), `local.sample.php` |
-| `database/` | `schema.sql` (43 tables + settings) |
+| `database/` | `schema.sql` (44 tables + settings) and upgrade SQL in `migrations/` |
 | `storage/` | Logs, cache, generated reports, `installed.lock`; denied to web |
 | `documentation/` | This documentation set; denied to web |
 | `tests/`, `tools/` | Development-only verification; excluded from the hosting package |
@@ -110,6 +110,7 @@ Services own multi-step rules that must stay consistent across controllers:
 - `EvaluationService` — access state, validation, anonymous submission.
 - `SurveyService` — versioned survey authoring and publication.
 - `UatService` — invitations, rating validation, interpretation.
+- `InviteService` — hashed Dean invitation creation, locking, consumption, revocation.
 - `ReportService` — report assembly and CSV/PDF export.
 - `DemoService` — fictional dataset generation/reset.
 - `DefaultDataService` — standard templates and UAT form.
@@ -127,9 +128,11 @@ Precedence:
 
 1. Built-in defaults (`config/app.php`).
 2. Local overrides (`config/local.php`).
-3. Optional environment overrides for database tests/staging (`ICOTAS_DB_HOST`, `ICOTAS_DB_PORT`, `ICOTAS_DB_DATABASE`, `ICOTAS_DB_USERNAME`, `ICOTAS_DB_PASSWORD`).
+3. Optional environment overrides for database tests/staging (`ICOTAS_DB_HOST`, `ICOTAS_DB_PORT`, `ICOTAS_DB_DATABASE`, `ICOTAS_DB_USERNAME`, `ICOTAS_DB_PASSWORD`, `ICOTAS_DEVELOPER_KEY`).
 
 The application key must be a random 64-character hex string. It protects encrypted QR/UAT tokens and HMAC-based IP hashing. Changing it invalidates re-displayable tokens; it does not destroy stored responses.
+
+`developer_key` is a separate high-entropy secret. It is embedded in the hidden developer URL (`/developer/{key}`) used to issue Dean invitation codes. Leave it empty to disable the page. It is not a user password and must not be reused across installations.
 
 `config/local.php` is git-ignored and denied by `.htaccess`.
 

@@ -7,6 +7,7 @@
  */
 
 use App\Controllers\AcademicController;
+use App\Controllers\AccountController;
 use App\Controllers\AiController;
 use App\Controllers\AnalyticsController;
 use App\Controllers\AssignmentController;
@@ -14,6 +15,7 @@ use App\Controllers\AuditLogController;
 use App\Controllers\AuthController;
 use App\Controllers\DashboardController;
 use App\Controllers\DemoController;
+use App\Controllers\DeveloperController;
 use App\Controllers\EvaluationController;
 use App\Controllers\HomeController;
 use App\Controllers\InstructorController;
@@ -35,7 +37,19 @@ use App\Controllers\UserController;
 $router->get('/', [HomeController::class, 'index']);
 $router->get('/login', [AuthController::class, 'showLogin'], ['guest']);
 $router->post('/login', [AuthController::class, 'login'], ['guest']);
+$router->get('/signup', [AuthController::class, 'showSignup'], ['guest']);
+$router->post('/signup', [AuthController::class, 'signup'], ['guest']);
+$router->get('/dean-signup', [AuthController::class, 'showDeanSignup'], ['guest']);
+$router->post('/dean-signup', [AuthController::class, 'deanSignup'], ['guest']);
+$router->get('/account/password', [AccountController::class, 'show'], ['auth']);
+$router->post('/account/password', [AccountController::class, 'update'], ['auth']);
 $router->post('/logout', [AuthController::class, 'logout'], ['auth']);
+
+/* Unlinked developer console. The secret key is the only credential; no
+ * navigation entry points to these routes. */
+$router->get('/developer/{key}', [DeveloperController::class, 'index']);
+$router->post('/developer/{key}', [DeveloperController::class, 'store']);
+$router->post('/developer/{key}/invites/{id}/revoke', [DeveloperController::class, 'revoke']);
 
 /* Anonymous-by-design UAT invitations (token in URL) */
 $router->get('/uat/respond/{token}', [UatController::class, 'respond']);

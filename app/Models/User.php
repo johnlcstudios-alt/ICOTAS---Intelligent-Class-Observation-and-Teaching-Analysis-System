@@ -108,8 +108,8 @@ final class User extends Model
             'INSERT INTO users
              (role_id, username, email, password_hash, first_name, middle_name, last_name, suffix,
               employee_number, student_number, department_id, program_id, section_id, year_level, phone,
-              avatar, status, is_demo, password_changed_at, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())',
+              avatar, status, is_demo, must_change_password, password_changed_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())',
             [
                 $data['role_id'], $data['username'], $data['email'], $data['password_hash'],
                 $data['first_name'], $data['middle_name'] ?? null, $data['last_name'], $data['suffix'] ?? null,
@@ -117,6 +117,7 @@ final class User extends Model
                 $data['department_id'] ?? null, $data['program_id'] ?? null, $data['section_id'] ?? null,
                 $data['year_level'] ?? null, $data['phone'] ?? null, $data['avatar'] ?? null,
                 $data['status'] ?? 'active', $data['is_demo'] ?? 0,
+                !empty($data['must_change_password']) ? 1 : 0,
             ]
         );
     }
@@ -144,13 +145,21 @@ final class User extends Model
         Database::execute('UPDATE users SET status = ?, updated_at = NOW() WHERE id = ?', [$status, $id]);
     }
 
-    public function resetPassword(int $id, string $password): void
+    public function resetPassword(int $id, string $password, bool $mustChange = true): void
     {
         Database::execute(
-            'UPDATE users SET password_hash = ?, password_changed_at = NOW(), updated_at = NOW() WHERE id = ?',
-            [password_hash($password, PASSWORD_DEFAULT), $id]
+            'UPDATE users SET password_hash = ?, password_changed_at = NOW(), must_change_password = ?, updated_at = NOW() WHERE id = ?',
+            [password_hash($password, PASSWORD_DEFAULT), $mustChange ? 1 : 0, $id]
         );
         Database::execute('DELETE FROM user_sessions WHERE user_id = ?', [$id]);
+    }
+
+    public function changePassword(int $id, string $password): void
+    {
+        Database::execute(
+            'UPDATE users SET password_hash = ?, password_changed_at = NOW(), must_change_password = 0, updated_at = NOW() WHERE id = ?',
+            [password_hash($password, PASSWORD_DEFAULT), $id]
+        );
     }
 
     public function countsByRole(bool $demo = false): array
