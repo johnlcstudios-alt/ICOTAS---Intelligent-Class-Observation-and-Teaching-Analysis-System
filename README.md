@@ -1,6 +1,6 @@
 # ICOTAS
 
-**Intelligent Class Observation and Teaching Analytics System**
+[**Intelligent Class Observation and Teaching Analytics System**](icotas.kesug.com)
 ACLC College Tacloban City
 
 ICOTAS is a native PHP 8 academic evaluation and teaching-analytics platform. It combines anonymous QR-based student evaluations, instructor-private analytics, rule-based sentiment and theme analysis, transparent trend indicators, class observations, ISO/IEC 25010 user acceptance testing (UAT), institutional reports, and a Dean/Academic Head administration console.
