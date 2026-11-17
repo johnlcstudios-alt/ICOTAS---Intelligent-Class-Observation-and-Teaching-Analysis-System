@@ -182,7 +182,7 @@ The installer refuses to run while `storage/installed.lock` exists. To start ove
 | `Access denied for user` | Correct the host, database name, username, and password in `config/local.php` or rerun the installer. |
 | 404 on every route except `/` | Apache is not reading `.htaccess`; enable `mod_rewrite` and `AllowOverride All`. |
 | Installer says the installation is already configured | `storage/installed.lock` exists; see **Reinstalling**. |
-| Login succeeds but you are returned to the sign-in page | The session directory is not writable, or `base_url` is wrong for the URL you are using. |
+| Login succeeds but you are returned to the sign-in page | PHP's session save path is not writable, or `app.base_url` does not match the URL you are using. |
 
 ## ICOTAS LIVE DEMO: icotas.kesug.com
 
