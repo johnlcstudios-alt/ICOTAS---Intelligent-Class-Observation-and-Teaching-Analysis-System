@@ -29,7 +29,7 @@ Use these terms precisely:
 | Research / system requirement | Implementation | Verification | Claim status |
 |---|---|---|---|
 | Dean/Academic Head administration | `dean`/`academic_head` routes and controllers | Route smoke, E2E RBAC | New implementation result |
-| Create / add Dean accounts (objective 1 support) | `AdministratorController`, `/dean/administrators`, `InviteService`, `/dean-signup` | Automated registry/creation tests; 36 new E2E checks including escalation refusals | New implementation result |
+| Create / add Dean accounts (objective 1 support) | `AdministratorController`, `/dean/administrators`, `DeveloperController`, `/developer/{key}` | Automated creation and developer-console tests; E2E checks including escalation refusals | New implementation result |
 | Instructor private data only | Ownership checks; instructor-scoped analytics/predictions/reports | Automated instructor-scope test; RBAC review | New implementation result |
 | Student mobile portal with QR, link, code | `/student/scan`, `/student/join`, `/evaluate/{token}` | E2E manual code, direct link, submission | New implementation result |
 | One response per session | Unique participation row + transaction + row lock | Automated duplicate test; E2E duplicate guard | New implementation result |

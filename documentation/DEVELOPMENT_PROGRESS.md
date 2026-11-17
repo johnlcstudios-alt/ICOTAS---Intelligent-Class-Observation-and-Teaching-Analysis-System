@@ -28,6 +28,22 @@ This file is the running status record. Update it whenever a milestone moves. It
 
 ## 2. Change log
 
+### 2026-11-17 — Invitation codes removed; developer console expanded
+
+**Removed**
+
+- `InviteService`, the `/dean-signup` route and view, the `registration_invites` table, and the `allow_dean_signup` setting. Migration: `2026_11_17_remove_registration_invites.sql`.
+- Dean self-registration and every invitation-related UI, test, and route.
+
+**Added**
+
+- Direct account creation for both administrative roles at `/dean/administrators`: no codes, with a generated temporary password or an explicit password.
+- An unlinked developer console at `/developer/{key}` that manages users, any table row, settings, demo data, audit history, and guarded SQL.
+
+**Changed**
+
+- Academic Heads may now use `/dean/administrators` for Academic Head accounts; only a Dean may create or manage Dean accounts.
+
 ### 2026-11-17 — Administrator account provisioning (Dean-only)
 
 **Added**
@@ -112,7 +128,7 @@ Database scope rules for these tools are documented in `testing.md` §9. None of
 
 ## 5. Database changes in this cycle
 
-**None.** The administrator module reuses existing tables: `users`, `roles`, `registration_invites`, `audit_logs`, `rate_limits`, `user_sessions`. No migration is required to deploy it; existing installations only need the updated files.
+Migration `2026_11_17_remove_registration_invites.sql` drops `registration_invites` and deletes the `allow_dean_signup` setting from existing installations. Fresh installs from `database/schema.sql` already match the new state. The administrator and developer modules otherwise reuse `users`, `roles`, `audit_logs`, `rate_limits`, and `user_sessions`.
 
 ---
 

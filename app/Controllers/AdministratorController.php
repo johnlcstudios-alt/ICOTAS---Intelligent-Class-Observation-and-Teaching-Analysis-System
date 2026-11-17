@@ -11,71 +11,80 @@ use App\Core\Validator;
 use App\Models\Academic;
 use App\Models\User;
 use App\Services\AuditService;
-use App\Services\InviteService;
 
 /**
  * Administrator (Dean / Academic Head) account provisioning.
  *
- * Only an authenticated Dean may reach this module: creating an administrative
- * account is a privilege-granting action, so an Academic Head cannot use it to
- * escalate. Two provisioning paths are offered:
+ * Both administrative roles can create accounts directly. A Dean may create
+ * either administrative role; an Academic Head may create Academic Head
+ * accounts only. The ceiling is enforced on the server, not just in the form,
+ * so a forged role cannot be used to escalate privileges.
  *
- *   1. Direct creation — the Dean supplies the profile and ICOTAS issues either
- *      a generated temporary password (change required at first sign-in) or an
- *      explicit password.
- *   2. Invitation — the Dean issues a single-use, hashed invitation code that
- *      the recipient redeems at /dean-signup, choosing their own password.
- *
- * Every action is audit-logged and refused while its prerequisites are absent.
+ * No invitation codes exist: the creator supplies the profile and ICOTAS
+ * issues either a generated temporary password (change required at first
+ * sign-in) or an explicit password. Every action is audit-logged.
  */
 final class AdministratorController extends BaseController
 {
     private User $users;
     private Academic $academic;
-    private InviteService $invites;
 
     public function __construct()
     {
         $this->users = new User();
         $this->academic = new Academic();
-        $this->invites = new InviteService();
     }
 
     public function index(): void
     {
-        Auth::requireDean();
+        Auth::requireAdmin();
 
         $demo = $this->demo();
+        $isDean = Auth::isDean();
         $generatedCredentials = Session::pull('_administrator_credentials');
-        $generatedInvite = Session::pull('_administrator_invite');
+        $administrators = $this->users->administrators($demo);
+
+        // An Academic Head must never see Dean records, even though both roles
+        // share this module.
+        if (!$isDean) {
+            $administrators = array_values(array_filter(
+                $administrators,
+                static fn (array $row): bool => (string) $row['role'] === 'academic_head'
+            ));
+        }
+
+        $counts = $this->users->countAdministrators($demo);
+        if (!$isDean) {
+            $counts['dean'] = 0;
+        }
 
         $this->view('dean/administrators/index', [
             'pageTitle' => 'Administrator Accounts',
-            'administrators' => $this->users->administrators($demo),
-            'counts' => $this->users->countAdministrators($demo),
+            'administrators' => $administrators,
+            'counts' => $counts,
             'instructorCount' => $this->users->countByRole('instructor', $demo),
             'studentCount' => $this->users->countByRole('student', $demo),
-            'invites' => $this->deanInvites(),
             'departments' => $this->academic->departments($demo, true),
             'generatedCredentials' => is_array($generatedCredentials) ? $generatedCredentials : null,
-            'generatedInvite' => is_array($generatedInvite) ? $generatedInvite : null,
-            'deanSignupEnabled' => (string) setting('allow_dean_signup', '1') === '1' && !$demo,
+            'isDean' => $isDean,
             'demo' => $demo,
         ]);
     }
 
     /**
-     * Create an administrative account directly, without an invitation.
+     * Create an administrative account directly. Invitation codes are gone;
+     * the creator owns the credential hand-off.
      */
     public function store(): void
     {
         $this->requirePost();
-        Auth::requireDean();
+        Auth::requireAdmin();
 
         if (RateLimiter::tooMany('administrator.create', 30, 3600)) {
             $this->error('Too many administrator accounts were created from this network. Try again later.', 'dean/administrators');
         }
 
+        $isDean = Auth::isDean();
         $input = [
             'first_name' => $this->postString('first_name'),
             'middle_name' => $this->postString('middle_name'),
@@ -85,12 +94,21 @@ final class AdministratorController extends BaseController
             'email' => strtolower($this->postString('email')),
             'employee_number' => $this->postString('employee_number'),
             'phone' => $this->postString('phone'),
-            'role' => $this->postString('role', 'dean'),
+            'role' => $this->postString('role', $isDean ? 'dean' : 'academic_head'),
             'status' => $this->postString('status', 'active'),
             'password_mode' => $this->postString('password_mode', 'generate'),
         ];
         $password = (string) $this->input('password', '');
         $confirmation = (string) $this->input('password_confirmation', '');
+
+        if ($input['role'] === 'dean' && !$isDean) {
+            $this->rememberInput($input);
+            abort(403, 'Only a Dean may create another Dean account.');
+        }
+        if (!in_array($input['role'], ['dean', 'academic_head'], true)) {
+            $this->rememberInput($input);
+            $this->error('Choose a valid administrative role.', 'dean/administrators');
+        }
 
         $validator = Validator::make(array_merge($input, [
             'password' => $password,
@@ -189,86 +207,6 @@ final class AdministratorController extends BaseController
         }
 
         $this->success($label . ' account created successfully.', 'dean/administrators');
-    }
-
-    /**
-     * Issue a single-use invitation code that the recipient redeems at
-     * /dean-signup to choose their own password.
-     */
-    public function storeInvite(): void
-    {
-        $this->requirePost();
-        Auth::requireDean();
-
-        if (RateLimiter::tooMany('administrator.invite', 30, 3600)) {
-            $this->error('Too many invitation codes were requested from this network. Try again later.', 'dean/administrators');
-        }
-
-        $maxUses = max(1, min(InviteService::MAX_USES_LIMIT, $this->intInput('max_uses', 1)));
-        $validDays = max(1, min(InviteService::MAX_VALID_DAYS, $this->intInput('valid_days', 7)));
-        $note = $this->postString('note');
-        if (mb_strlen($note) > 190) {
-            $this->error('The note is too long. Keep it under 190 characters.', 'dean/administrators');
-        }
-
-        try {
-            $invite = $this->invites->create('dean', $maxUses, $validDays, $note, Auth::id());
-        } catch (\Throwable $e) {
-            error_log('Dean invitation creation failed: ' . $e->getMessage());
-            $this->error('The invitation code could not be created.', 'dean/administrators');
-        }
-
-        (new AuditService())->record(
-            'invite.create',
-            'registration_invite',
-            (int) $invite['id'],
-            'Dean invitation code created (' . $maxUses . ' use(s), expires ' . $invite['expires_at'] . ')'
-        );
-
-        Session::set('_administrator_invite', $invite);
-        $this->success('Dean invitation code created. Copy it now — it is shown only once.', 'dean/administrators');
-    }
-
-    public function revokeInvite(string $id): void
-    {
-        $this->requirePost();
-        Auth::requireDean();
-
-        $invite = $this->invites->find((int) $id);
-        if (!$invite) {
-            abort(404);
-        }
-        if (!$this->isDeanInvite($invite)) {
-            $this->error('That invitation code does not belong to this module.', 'dean/administrators');
-        }
-        if ($this->invites->revoke((int) $id)) {
-            (new AuditService())->record(
-                'invite.revoke',
-                'registration_invite',
-                (int) $id,
-                'Revoked Dean invitation code ending ' . (string) $invite['code_hint']
-            );
-            $this->success('Invitation code revoked.', 'dean/administrators');
-        }
-        $this->error('That invitation code was already revoked or is unavailable.', 'dean/administrators');
-    }
-
-    /**
-     * @return array<int,array<string,mixed>>
-     */
-    private function deanInvites(int $limit = 50): array
-    {
-        $deanRoleId = $this->users->roleId('dean');
-        return array_values(array_filter(
-            $this->invites->all($limit),
-            static fn (array $invite): bool => $deanRoleId !== null && (int) $invite['role_id'] === $deanRoleId
-        ));
-    }
-
-    private function isDeanInvite(array $invite): bool
-    {
-        $deanRoleId = $this->users->roleId('dean');
-        return $deanRoleId !== null && (int) $invite['role_id'] === $deanRoleId;
     }
 
     private function rememberInput(array $input): void

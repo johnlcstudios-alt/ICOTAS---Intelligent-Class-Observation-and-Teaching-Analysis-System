@@ -394,20 +394,21 @@ final class UserController extends BaseController
     }
 
     /**
-     * Administrative accounts (Dean, Academic Head) are managed by a Dean.
+     * Administrative accounts are governed by role ceiling: a Dean may manage
+     * either administrative role, while an Academic Head may manage Academic
+     * Head accounts but never a Dean. Administrators may always open their own
+     * record; role and status changes to self are neutralised in update().
      */
     private function guardAdministrativeTarget(array $target): void
     {
         if (Auth::isDean()) {
             return;
         }
-        // Administrators may always open their own record; role and status
-        // changes to self are neutralised in update().
         if ((int) ($target['id'] ?? 0) === (int) Auth::id()) {
             return;
         }
-        if (in_array((string) ($target['role'] ?? ''), ['dean', 'academic_head'], true)) {
-            abort(403, 'Only a Dean may manage administrator accounts.');
+        if ((string) ($target['role'] ?? '') === 'dean') {
+            abort(403, 'Only a Dean may manage a Dean account.');
         }
     }
 

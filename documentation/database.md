@@ -17,11 +17,10 @@
 | Table | Purpose |
 |---|---|
 | `roles` | `dean`, `academic_head`, `instructor`, `student` |
-| `users` | Accounts, role, academic placement, status, `is_demo`, password hash, `must_change_password`. Includes Dean-issued, invited-Dean, and self-registered student accounts. |
+| `users` | Accounts, role, academic placement, status, `is_demo`, password hash, `must_change_password`. Includes administrator-created and self-registered student accounts. |
 | `user_sessions` | Server-side session metadata and revocation support |
 | `login_attempts` | Per-account/IP failure history for throttling |
-| `rate_limits` | Network-level request buckets (for example `auth.login`, `auth.signup`, `auth.dean_signup`, `developer.invite`) |
-| `registration_invites` | SHA-256-hashed Dean invitation codes with usage limit, expiry, revocation, and creator |
+| `rate_limits` | Network-level request buckets (for example `auth.login`, `auth.signup`, `administrator.create`) |
 | `password_reset_tokens` | Reserved table; no public reset flow is exposed in this build |
 | `audit_logs` | Actor, action, entity, description, hashed IP, timestamp |
 | `notifications` | In-app user notifications; no email transport |
@@ -176,16 +175,17 @@ Existing installations upgrade in place with the SQL patches in `database/migrat
 
 | Migration | Purpose |
 |---|---|
-| `2026_11_10_dean_invites_and_forced_password.sql` | Adds `users.must_change_password`, creates `registration_invites`, seeds `allow_dean_signup = 1` |
+| `2026_11_10_dean_invites_and_forced_password.sql` | Historical: added `users.must_change_password` and the now-removed invitation table |
+| `2026_11_17_remove_registration_invites.sql` | Drops `registration_invites` and deletes the `allow_dean_signup` setting |
 
-Run it once with phpMyAdmin or the MySQL client **before** deploying the matching application files:
+Run the removal migration once with phpMyAdmin or the MySQL client **before** deploying the matching application files:
 
 ```powershell
-Get-Content database\migrations\2026_11_10_dean_invites_and_forced_password.sql -Raw |
+Get-Content database\migrations\2026_11_17_remove_registration_invites.sql -Raw |
   C:\xampp\mysql\bin\mysql.exe -u root icotas
 ```
 
-The migration is intentionally not idempotent for `ALTER TABLE`: re-running it fails loudly instead of silently leaving a half-upgraded schema. Verify with:
+Verify with:
 
 ```sql
 SELECT COUNT(*) FROM information_schema.tables
@@ -194,7 +194,7 @@ SHOW COLUMNS FROM users LIKE 'must_change_password';
 SELECT setting_key, setting_value FROM system_settings WHERE setting_key = 'allow_dean_signup';
 ```
 
-Expected on this release: one table, one column, and `allow_dean_signup = 1`. Fresh installs from `database/schema.sql` do not run this file.
+Expected on this release: zero invite tables, the `must_change_password` column retained, and no `allow_dean_signup` row. Fresh installs from `database/schema.sql` already contain this state.
 
 ## 8. Backup and restore
 

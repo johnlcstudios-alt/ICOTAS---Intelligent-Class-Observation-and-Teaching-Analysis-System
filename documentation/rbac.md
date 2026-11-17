@@ -9,9 +9,9 @@
 | `instructor` | Instructor | Own teaching data only |
 | `student` | Student | Own evaluation portal, eligible sessions only |
 
-Public access is limited to `/`, `/login`, `/signup` (when student self-registration is enabled), `/dean-signup` (when Dean invitation registration is enabled), `/uat/respond/{token}` (invitation-controlled UAT), and static assets. `/evaluate/{token}` requires an authenticated student and per-session eligibility.
+Public access is limited to `/`, `/login`, `/signup` (when student self-registration is enabled), `/uat/respond/{token}` (invitation-controlled UAT), and static assets. `/evaluate/{token}` requires an authenticated student and per-session eligibility. There is no public Dean registration and no invitation-code flow.
 
-The developer console at `/developer/{key}` sits outside the user RBAC model: its credential is a high-entropy key in `config/local.php`, not a user session. It is not linked in navigation, is not a role, and returns 404 unless the exact key matches. Anyone holding that URL can issue Dean invitation codes, so it must be treated as a deployment secret.
+The developer console at `/developer/{key}` sits outside the user RBAC model: its credential is a high-entropy key in `config/local.php`, not a user session. It is not linked in navigation, is not a role, and returns 404 unless the exact key matches. Anyone holding that URL can manage every account and record in the installation, so it must be treated as a deployment secret.
 
 ## 2. Enforcement layers
 
@@ -42,9 +42,8 @@ Legend: ✅ allowed, — not available, ◐ limited to own records.
 |---|---|---|---|
 | Institutional dashboard | ✅ | — | — |
 | User accounts, CSV import, password reset | ✅ (all roles) | ◐ instructor/student/academic-head only; Dean records are refused | — |
-| Administrator accounts module (`/dean/administrators`) | ✅ Dean only | — (403) | — |
-| Create a Dean or Academic Head account directly | ✅ | — (403) | — |
-| Issue/revoke Dean invitation codes from inside ICOTAS | ✅ | — | — |
+| Administrator accounts module (`/dean/administrators`) | ✅ Dean: both roles; Academic Head: Academic Head accounts only | — (403) | — |
+| Create a Dean or Academic Head account directly | ✅ (Dean role is Dean-only) | — (403) | — |
 | Departments, programs, years, semesters, courses, sections, schedules, enrollments, teaching loads | ✅ | — | — |
 | Survey builder, templates, publish/new version/duplicate/archive | ✅ | — | — |
 | Evaluation assignments | ✅ | — | — |
@@ -62,9 +61,7 @@ Legend: ✅ allowed, — not available, ◐ limited to own records.
 | Demo data generate/reset | ✅ | — | — |
 | Student evaluation dashboard | — | — | ✅ |
 | Create a personal student account | — | — | ✅ when enabled and not in demo mode |
-| Self-register a Dean account with an invitation code | ✅ own account via `/dean-signup` | — | — |
 | Change own password | ✅ | ✅ | ✅ |
-| Issue or revoke Dean invitation codes | Developer URL key, not a user role | — | — |
 | QR scan, manual code, direct link | — | — | ✅ eligible sessions only |
 | Submit anonymous evaluation | — | — | ✅ once per session |
 | Evaluation history | — | — | ✅ own participation status only |
@@ -72,14 +69,14 @@ Legend: ✅ allowed, — not available, ◐ limited to own records.
 
 ## 3a. Administrator account provisioning
 
-Two supported paths create an administrative account:
+Administrative accounts are created directly; there are no invitation codes.
 
-1. **Direct creation** — a Dean opens `/dean/administrators`, supplies the profile, and ICOTAS either generates a temporary password (change required at first sign-in, shown once) or accepts an explicit password.
-2. **Invitation** — a Dean (or the unlinked developer console) issues a single-use, hashed invitation code; the recipient redeems it at `/dean-signup` and chooses their own password.
+1. **In-app direct creation** — a Dean or Academic Head opens `/dean/administrators`, supplies the profile, and ICOTAS either generates a temporary password (change required at first sign-in, shown once) or accepts an explicit password. A Dean may create either administrative role; an Academic Head may create Academic Head accounts only.
+2. **Developer console** — the unlinked `/developer/{key}` page can create, edit, deactivate, or delete any account, including Deans.
 
 Privilege-escalation rules enforced in code, not only in the UI:
 
-- `/dean/administrators` and every create/invite/revoke action carry `['auth', 'role:dean']`; an Academic Head receives 403.
+- `/dean/administrators` carries `['auth', 'admin']`; the controller refuses a Dean role submission from an Academic Head with 403.
 - `UserController::guardAssignableRole()` refuses the `dean` role for any account that is not a Dean, so a forged `role=dean` in `/dean/users` or a CSV import row is rejected.
 - `UserController::guardAdministrativeTarget()` refuses an Academic Head any edit, status change, or password reset on a Dean or Academic Head record other than their own.
 - An Academic Head's user directory excludes Dean accounts, and the Dean role is filtered out of their role dropdown.
@@ -140,8 +137,8 @@ Academic Head access is not yet department-limited: an Academic Head can still s
 RBAC is covered by:
 
 - HTTP end-to-end checks: student receives 403 on dean and instructor dashboards; an Academic Head receives 403 on `/dean/administrators`, on the create/POST endpoint, on a forged `role=dean` submission, and on opening or deactivating a Dean record; the Dean role is absent from the Academic Head user form and directory.
-- HTTP end-to-end onboarding checks: a wrong developer key returns 404, an invitation creates one live Dean account, single-use and revoked codes cannot be reused, and an instructor with a temporary password is confined to `/account/password`.
-- Automated tests: instructor analytics are restricted to that instructor; qr/session and UAT access checks; invitation hashing/consumption/revocation; forced-change flag lifecycle.
+- HTTP end-to-end onboarding checks: a wrong developer key returns 404, the developer console manages users and table rows, direct administrator creation requires no code, and an instructor with a temporary password is confined to `/account/password`.
+- Automated tests: instructor analytics are restricted to that instructor; qr/session and UAT access checks; developer schema metadata, row writes, and SQL guardrails; forced-change flag lifecycle.
 - Smoke crawl: each role's own pages return HTTP 200.
 - Manual review: every protected route in `app/routes.php` carries middleware.
 

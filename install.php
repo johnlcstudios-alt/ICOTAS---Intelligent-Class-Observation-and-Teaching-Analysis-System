@@ -510,7 +510,7 @@ $csrf = (string) $_SESSION['installer_csrf'];
                     ?>
                     <div class="alert alert-warn">
                         <strong>Private developer page (save this URL now)</strong>
-                        <p style="margin:.35rem 0">This page creates Dean invitation codes. It is not linked anywhere in ICOTAS. Anyone with the exact URL can issue codes, so treat it like a password.</p>
+                        <p style="margin:.35rem 0">This unlinked console can manage every account, record, setting, and table in the installation. Anyone with the exact URL has full access, so treat it like a password.</p>
                         <p style="margin:0;word-break:break-all"><code><?= h($developerUrl) ?></code></p>
                     </div>
                 <?php endif; ?>

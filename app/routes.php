@@ -40,17 +40,43 @@ $router->get('/login', [AuthController::class, 'showLogin'], ['guest']);
 $router->post('/login', [AuthController::class, 'login'], ['guest']);
 $router->get('/signup', [AuthController::class, 'showSignup'], ['guest']);
 $router->post('/signup', [AuthController::class, 'signup'], ['guest']);
-$router->get('/dean-signup', [AuthController::class, 'showDeanSignup'], ['guest']);
-$router->post('/dean-signup', [AuthController::class, 'deanSignup'], ['guest']);
 $router->get('/account/password', [AccountController::class, 'show'], ['auth']);
 $router->post('/account/password', [AccountController::class, 'update'], ['auth']);
 $router->post('/logout', [AuthController::class, 'logout'], ['auth']);
 
 /* Unlinked developer console. The secret key is the only credential; no
- * navigation entry points to these routes. */
+ * navigation entry points to these routes. It intentionally sits outside the
+ * user RBAC model and can manage every record in the installation. */
 $router->get('/developer/{key}', [DeveloperController::class, 'index']);
-$router->post('/developer/{key}', [DeveloperController::class, 'store']);
-$router->post('/developer/{key}/invites/{id}/revoke', [DeveloperController::class, 'revoke']);
+
+$router->get('/developer/{key}/users', [DeveloperController::class, 'users']);
+$router->get('/developer/{key}/users/create', [DeveloperController::class, 'createUser']);
+$router->post('/developer/{key}/users', [DeveloperController::class, 'storeUser']);
+$router->get('/developer/{key}/users/{id}/edit', [DeveloperController::class, 'editUser']);
+$router->post('/developer/{key}/users/{id}', [DeveloperController::class, 'updateUser']);
+$router->post('/developer/{key}/users/{id}/status', [DeveloperController::class, 'toggleUserStatus']);
+$router->post('/developer/{key}/users/{id}/password', [DeveloperController::class, 'resetUserPassword']);
+$router->post('/developer/{key}/users/{id}/delete', [DeveloperController::class, 'deleteUser']);
+
+$router->get('/developer/{key}/data', [DeveloperController::class, 'data']);
+$router->get('/developer/{key}/data/{table}/create', [DeveloperController::class, 'createRow']);
+$router->post('/developer/{key}/data/{table}', [DeveloperController::class, 'storeRow']);
+$router->get('/developer/{key}/data/{table}/{id}/edit', [DeveloperController::class, 'editRow']);
+$router->post('/developer/{key}/data/{table}/{id}', [DeveloperController::class, 'updateRow']);
+$router->post('/developer/{key}/data/{table}/{id}/delete', [DeveloperController::class, 'deleteRow']);
+$router->get('/developer/{key}/data/{table}', [DeveloperController::class, 'dataTable']);
+
+$router->get('/developer/{key}/settings', [DeveloperController::class, 'settings']);
+$router->post('/developer/{key}/settings', [DeveloperController::class, 'updateSettings']);
+$router->post('/developer/{key}/settings/create', [DeveloperController::class, 'storeSetting']);
+$router->post('/developer/{key}/settings/{id}/delete', [DeveloperController::class, 'deleteSetting']);
+
+$router->get('/developer/{key}/audit', [DeveloperController::class, 'auditLog']);
+$router->get('/developer/{key}/sql', [DeveloperController::class, 'sql']);
+$router->post('/developer/{key}/sql', [DeveloperController::class, 'runSql']);
+$router->get('/developer/{key}/demo', [DeveloperController::class, 'demoData']);
+$router->post('/developer/{key}/demo/generate', [DeveloperController::class, 'generateDemo']);
+$router->post('/developer/{key}/demo/reset', [DeveloperController::class, 'resetDemo']);
 
 /* Anonymous-by-design UAT invitations (token in URL) */
 $router->get('/uat/respond/{token}', [UatController::class, 'respond']);
@@ -85,12 +111,11 @@ $router->post('/dean/users/{id}', [UserController::class, 'update'], ['auth', 'a
 $router->post('/dean/users/{id}/status', [UserController::class, 'toggleStatus'], ['auth', 'admin']);
 $router->post('/dean/users/{id}/reset-password', [UserController::class, 'resetPassword'], ['auth', 'admin']);
 
-/* Administrator (Dean / Academic Head) account provisioning — Dean only, because
- * it grants administrative authority. */
-$router->get('/dean/administrators', [AdministratorController::class, 'index'], ['auth', 'role:dean']);
-$router->post('/dean/administrators', [AdministratorController::class, 'store'], ['auth', 'role:dean']);
-$router->post('/dean/administrators/invites', [AdministratorController::class, 'storeInvite'], ['auth', 'role:dean']);
-$router->post('/dean/administrators/invites/{id}/revoke', [AdministratorController::class, 'revokeInvite'], ['auth', 'role:dean']);
+/* Administrator (Dean / Academic Head) account provisioning. Deans may create
+ * either administrative role; Academic Heads may create Academic Head accounts
+ * only. The controller enforces the role ceiling in addition to this gate. */
+$router->get('/dean/administrators', [AdministratorController::class, 'index'], ['auth', 'admin']);
+$router->post('/dean/administrators', [AdministratorController::class, 'store'], ['auth', 'admin']);
 
 /* Academic structure: generic entity controller */
 $router->get('/dean/academic/{entity}', [AcademicController::class, 'index'], ['auth', 'admin']);

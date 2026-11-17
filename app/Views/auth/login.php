@@ -55,11 +55,6 @@ $demoMode = Setting::demoMode();
         <i class="bi bi-person-plus"></i> New student? <a href="<?= url('signup') ?>">Create an account</a>
     </p>
 <?php endif; ?>
-<?php if (!empty($deanSignupEnabled)): ?>
-    <p class="text-center small mt-3 mb-0">
-        <i class="bi bi-key"></i> Dean with an invitation code? <a href="<?= url('dean-signup') ?>">Register a Dean account</a>
-    </p>
-<?php endif; ?>
 <p class="text-center text-muted small mt-3 mb-0">
-    Instructor and staff accounts are issued by the Dean.
+    Instructor and staff accounts are issued by the Dean or Academic Head.
 </p>

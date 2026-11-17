@@ -3,41 +3,42 @@
 /** @var array $counts */
 /** @var int $instructorCount */
 /** @var int $studentCount */
-/** @var array $invites */
 /** @var array $departments */
 /** @var array|null $generatedCredentials */
-/** @var array|null $generatedInvite */
-/** @var bool $deanSignupEnabled */
+/** @var bool $isDean */
 /** @var bool $demo */
 use App\Core\Auth;
 
 $deans = (int) ($counts['dean'] ?? 0);
 $heads = (int) ($counts['academic_head'] ?? 0);
+$defaultRole = $isDean ? 'dean' : 'academic_head';
+$selectedRole = (string) old('role', $defaultRole);
 ?>
 <div class="page-head">
     <div>
         <span class="eyebrow">Account governance</span>
         <h2>Administrator accounts</h2>
-        <p>Create and manage Dean and Academic Head accounts. Administrator accounts can govern users, surveys, evaluations and reports, so every change here is audited.</p>
+        <p>Create and manage administrative accounts directly — no invitation codes. <?= $isDean ? 'A Dean may create either administrative role.' : 'As an Academic Head you may create and manage Academic Head accounts only.' ?> Every change here is audited.</p>
     </div>
     <div class="page-actions">
         <a class="btn btn-outline-secondary" href="<?= url('dean/users') ?>"><i class="bi bi-people"></i> All users</a>
-        <a class="btn btn-outline-primary" href="<?= url('dean-signup') ?>" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i> Invitation sign-up page</a>
     </div>
 </div>
 
 <div class="alert alert-info app-alert">
     <i class="bi bi-shield-lock"></i>
-    <span><strong>Administrative authority.</strong> A Dean account can manage every record in the institution. Grant it only to the person who holds that office, and deactivate it the moment the appointment ends.</span>
+    <span><strong>Administrative authority.</strong> A Dean account can manage every record in the institution. Grant it only to the person who holds that office, and deactivate it the moment the appointment ends.<?= $isDean ? '' : ' Dean accounts are hidden from this module and cannot be created or managed by an Academic Head.' ?></span>
 </div>
 
 <div class="stat-grid mb-4">
-    <div class="stat-card">
-        <span class="stat-icon"><i class="bi bi-mortarboard"></i></span>
-        <div class="stat-label">Dean accounts</div>
-        <div class="stat-value"><?= $deans ?></div>
-        <div class="stat-note"><?= e($demo ? 'Demo scope' : 'Live scope') ?></div>
-    </div>
+    <?php if ($isDean): ?>
+        <div class="stat-card">
+            <span class="stat-icon"><i class="bi bi-mortarboard"></i></span>
+            <div class="stat-label">Dean accounts</div>
+            <div class="stat-value"><?= $deans ?></div>
+            <div class="stat-note"><?= e($demo ? 'Demo scope' : 'Live scope') ?></div>
+        </div>
+    <?php endif; ?>
     <div class="stat-card">
         <span class="stat-icon"><i class="bi bi-person-badge"></i></span>
         <div class="stat-label">Academic Heads</div>
@@ -86,27 +87,10 @@ $heads = (int) ($counts['academic_head'] ?? 0);
     </div>
 <?php endif; ?>
 
-<?php if (!empty($generatedInvite)): ?>
-    <div class="card border-success mb-4">
-        <div class="card-header bg-success-subtle"><strong><i class="bi bi-envelope-paper"></i> New Dean invitation code — copy it now</strong></div>
-        <div class="card-body">
-            <p class="mb-2">This is the only time the full code is shown; only a hash is stored. Send it privately to the intended Dean.</p>
-            <div class="input-group input-group-lg mb-2">
-                <input class="form-control font-monospace" id="generatedAdminInvite" type="text" value="<?= e($generatedInvite['code']) ?>" readonly>
-                <button class="btn btn-outline-primary" type="button" data-copy="#generatedAdminInvite"><i class="bi bi-clipboard"></i> Copy</button>
-            </div>
-            <div class="small text-muted">
-                Uses: <?= (int) $generatedInvite['max_uses'] ?> · Expires: <?= e(format_datetime($generatedInvite['expires_at'])) ?>
-                · Redeemed at <code><?= e(url('dean-signup')) ?></code>
-            </div>
-        </div>
-    </div>
-<?php endif; ?>
-
 <div class="row g-4">
     <div class="col-xl-5">
         <div class="card">
-            <div class="card-header"><strong>Create an administrator account</strong><span class="text-muted small">Dean or Academic Head</span></div>
+            <div class="card-header"><strong>Create an administrator account</strong><span class="text-muted small"><?= $isDean ? 'Dean or Academic Head' : 'Academic Head only' ?></span></div>
             <div class="card-body">
                 <form method="post" action="<?= url('dean/administrators') ?>" data-single-submit>
                     <?= csrf_field() ?>
@@ -138,9 +122,12 @@ $heads = (int) ($counts['academic_head'] ?? 0);
                         <div class="col-md-6">
                             <label class="form-label" for="adminRole">Administrative role <span class="text-danger">*</span></label>
                             <select class="form-select" id="adminRole" name="role" required>
-                                <option value="dean" <?= selected(old('role', 'dean'), 'dean') ?>>Dean — college-wide administration</option>
-                                <option value="academic_head" <?= selected(old('role', ''), 'academic_head') ?>>Academic Head — restricted administration</option>
+                                <?php if ($isDean): ?>
+                                    <option value="dean" <?= selected($selectedRole, 'dean') ?>>Dean — college-wide administration</option>
+                                <?php endif; ?>
+                                <option value="academic_head" <?= selected($selectedRole, 'academic_head') ?>>Academic Head — restricted administration</option>
                             </select>
+                            <div class="form-text"><?= $isDean ? 'You may create either role. At least one active Dean must remain.' : 'Only a Dean may create or manage Dean accounts.' ?></div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label" for="adminDepartment">Department</label>
@@ -200,44 +187,16 @@ $heads = (int) ($counts['academic_head'] ?? 0);
         </div>
 
         <div class="card mt-4">
-            <div class="card-header"><strong>Invite a Dean instead</strong><span class="text-muted small">Recipient chooses their own password</span></div>
-            <div class="card-body">
-                <?php if (!$deanSignupEnabled): ?>
-                    <div class="alert alert-warning app-alert py-2 mb-0">
-                        <i class="bi bi-exclamation-triangle"></i>
-                        <span>Invitation redemption is currently unavailable because <?= $demo ? 'demonstration mode is active' : '<strong>Allow Deans to register</strong> is disabled in Settings' ?>. Direct account creation above still works.</span>
-                    </div>
-                <?php else: ?>
-                    <form method="post" action="<?= url('dean/administrators/invites') ?>" data-single-submit>
-                        <?= csrf_field() ?>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label" for="adminInviteUses">Maximum uses</label>
-                                <input class="form-control" id="adminInviteUses" name="max_uses" type="number" min="1" max="<?= (int) \App\Services\InviteService::MAX_USES_LIMIT ?>" value="1">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label" for="adminInviteDays">Valid for (days)</label>
-                                <input class="form-control" id="adminInviteDays" name="valid_days" type="number" min="1" max="<?= (int) \App\Services\InviteService::MAX_VALID_DAYS ?>" value="7">
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label" for="adminInviteNote">Internal note</label>
-                                <input class="form-control" id="adminInviteNote" name="note" maxlength="190" placeholder="For example: Dean, College of Computer Studies">
-                            </div>
-                        </div>
-                        <button class="btn btn-outline-primary w-100 mt-3" type="submit"><i class="bi bi-envelope-plus"></i> Create invitation code</button>
-                        <ol class="small text-muted mb-0 mt-3 ps-3">
-                            <li>Create the code and copy it.</li>
-                            <li>Send it privately to the intended Dean.</li>
-                            <li>The recipient opens <code><?= e(url('dean-signup')) ?></code>, enters the code and chooses their own password.</li>
-                        </ol>
-                    </form>
-                <?php endif; ?>
+            <div class="card-body small text-muted">
+                <div class="mb-2"><strong>Direct provisioning</strong></div>
+                <p class="mb-2">Administrator accounts are created here, fully formed, by an authorized administrator. There are no invitation codes to generate, send, redeem, or revoke.</p>
+                <p class="mb-0">When a generated password is used, hand it over privately. The account is forced to choose a new password at first sign-in, and every creation or status change is recorded in the audit log.</p>
             </div>
         </div>
     </div>
 
     <div class="col-xl-7">
-        <div class="card mb-4">
+        <div class="card">
             <div class="card-header">
                 <strong>Administrative accounts</strong>
                 <span class="text-muted small"><?= count($administrators) ?> record(s) in the <?= $demo ? 'demonstration' : 'live' ?> scope</span>
@@ -259,6 +218,12 @@ $heads = (int) ($counts['academic_head'] ?? 0);
                             </thead>
                             <tbody>
                             <?php foreach ($administrators as $row): ?>
+                                <?php
+                                // A Dean may manage either role; an Academic Head may
+                                // manage Academic Head records only. Dean records never
+                                // reach this list for an Academic Head.
+                                $canManage = $isDean || (string) $row['role'] === 'academic_head';
+                                ?>
                                 <tr>
                                     <td>
                                         <div class="d-flex align-items-center gap-2">
@@ -284,65 +249,20 @@ $heads = (int) ($counts['academic_head'] ?? 0);
                                     </td>
                                     <td class="small"><?= e(format_datetime($row['last_login_at'] ?? null)) ?></td>
                                     <td class="text-end">
-                                        <div class="table-actions">
-                                            <a class="btn btn-sm btn-outline-primary" href="<?= url('dean/users/' . (int) $row['id'] . '/edit') ?>"><i class="bi bi-pencil"></i> Manage</a>
-                                            <?php if ((int) $row['id'] !== (int) Auth::id()): ?>
-                                                <form method="post" action="<?= url('dean/users/' . (int) $row['id'] . '/status') ?>" class="d-inline" data-confirm="Change the status of this administrator account?">
-                                                    <?= csrf_field() ?>
-                                                    <button class="btn btn-sm <?= $row['status'] === 'active' ? 'btn-outline-secondary' : 'btn-outline-success' ?>" type="submit">
-                                                        <?= $row['status'] === 'active' ? 'Deactivate' : 'Activate' ?>
-                                                    </button>
-                                                </form>
-                                            <?php endif; ?>
-                                        </div>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                <?php endif; ?>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-header"><strong>Dean invitation codes</strong><span class="text-muted small">Newest first · hashes only</span></div>
-            <div class="card-body p-0">
-                <?php if (empty($invites)): ?>
-                    <div class="empty-state"><i class="bi bi-envelope-paper"></i>No invitation codes have been created.</div>
-                <?php else: ?>
-                    <div class="table-responsive">
-                        <table class="table mb-0 align-middle">
-                            <thead>
-                            <tr>
-                                <th>Code</th>
-                                <th>Note</th>
-                                <th>Uses</th>
-                                <th>Expires</th>
-                                <th>Status</th>
-                                <th class="text-end">Action</th>
-                            </tr>
-                            </thead>
-                            <tbody>
-                            <?php foreach ($invites as $invite): ?>
-                                <?php
-                                $status = \App\Services\InviteService::status($invite);
-                                $badge = ['active' => 'badge-success', 'used' => 'badge-soft', 'expired' => 'badge-warning', 'revoked' => 'badge-danger'][$status] ?? 'badge-soft';
-                                ?>
-                                <tr>
-                                    <td><code><?= e($invite['code_hint']) ?></code></td>
-                                    <td class="small"><?= ($invite['note'] ?? '') !== '' ? e($invite['note']) : '—' ?></td>
-                                    <td><?= (int) $invite['used_count'] ?> / <?= (int) $invite['max_uses'] ?></td>
-                                    <td class="small"><?= e(format_datetime($invite['expires_at'])) ?></td>
-                                    <td><span class="badge <?= e($badge) ?>"><?= e(ucfirst($status)) ?></span></td>
-                                    <td class="text-end">
-                                        <?php if ($status === 'active'): ?>
-                                            <form method="post" action="<?= url('dean/administrators/invites/' . (int) $invite['id'] . '/revoke') ?>" class="d-inline" data-confirm="Revoke this invitation code? It stops working immediately.">
-                                                <?= csrf_field() ?>
-                                                <button class="btn btn-sm btn-outline-danger" type="submit"><i class="bi bi-slash-circle"></i> Revoke</button>
-                                            </form>
+                                        <?php if ($canManage): ?>
+                                            <div class="table-actions">
+                                                <a class="btn btn-sm btn-outline-primary" href="<?= url('dean/users/' . (int) $row['id'] . '/edit') ?>"><i class="bi bi-pencil"></i> Manage</a>
+                                                <?php if ((int) $row['id'] !== (int) Auth::id()): ?>
+                                                    <form method="post" action="<?= url('dean/users/' . (int) $row['id'] . '/status') ?>" class="d-inline" data-confirm="Change the status of this administrator account?">
+                                                        <?= csrf_field() ?>
+                                                        <button class="btn btn-sm <?= $row['status'] === 'active' ? 'btn-outline-secondary' : 'btn-outline-success' ?>" type="submit">
+                                                            <?= $row['status'] === 'active' ? 'Deactivate' : 'Activate' ?>
+                                                        </button>
+                                                    </form>
+                                                <?php endif; ?>
+                                            </div>
                                         <?php else: ?>
-                                            <span class="text-muted small">—</span>
+                                            <span class="text-muted small">Dean-governed</span>
                                         <?php endif; ?>
                                     </td>
                                 </tr>
@@ -352,9 +272,9 @@ $heads = (int) ($counts['academic_head'] ?? 0);
                     </div>
                 <?php endif; ?>
             </div>
-            <div class="card-body border-top small text-muted">
-                <strong>Issued by:</strong> the developer console or a Dean on this page. Revoking a code never affects accounts already created with it.
-            </div>
+            <?php if (!$isDean): ?>
+                <div class="card-footer data-note">Dean accounts are not listed here. Only the Dean governing this installation can review or change them.</div>
+            <?php endif; ?>
         </div>
     </div>
 </div>

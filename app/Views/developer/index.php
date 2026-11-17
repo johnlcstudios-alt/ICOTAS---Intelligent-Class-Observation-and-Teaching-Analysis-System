@@ -1,131 +1,211 @@
 <?php
-/** @var array $invites */
-/** @var array|null $generated */
-/** @var string $developerKey */
+/**
+ * @var string $developerKey
+ * @var array $stats
+ * @var array $roleCounts
+ * @var array $recentUsers
+ * @var array $recentAudit
+ * @var int $auditToday
+ * @var int $activeSessions
+ * @var bool $demoMode
+ * @var string $appVersion
+ * @var string $phpVersion
+ * @var array $health
+ */
+$console = static fn (string $path = ''): string => url('developer/' . rawurlencode($developerKey) . ($path !== '' ? '/' . ltrim($path, '/') : ''));
+$formatBytes = static function (int $bytes): string {
+    if ($bytes <= 0) {
+        return '0 B';
+    }
+    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    $power = (int) floor(log($bytes, 1024));
+    $power = min($power, count($units) - 1);
+    return number_format($bytes / (1024 ** $power), $power === 0 ? 0 : 1) . ' ' . $units[$power];
+};
+$healthOk = count(array_filter($health, static fn (array $check): bool => !empty($check['ok'])));
 ?>
-    <div class="container-xl">
-        <div class="page-head mb-4">
-            <div>
-                <span class="eyebrow">Unlinked developer console</span>
-                <h2>Dean invitation codes</h2>
-                <p>Issue single-purpose codes that let a Dean create their own account. This page is not linked from ICOTAS and must remain private.</p>
+<div class="page-head">
+    <div>
+        <span class="eyebrow">Developer console</span>
+        <h2>System command center</h2>
+        <p>Inspect and repair every part of the installation: accounts, raw records, settings, schema-level queries and demonstration data. The console sits outside user RBAC and is reachable only with the developer key in the URL.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-outline-primary" href="<?= $console('data') ?>"><i class="bi bi-table"></i> Data browser</a>
+        <a class="btn btn-outline-primary" href="<?= $console('sql') ?>"><i class="bi bi-code-square"></i> SQL console</a>
+        <a class="btn btn-primary" href="<?= $console('users/create') ?>"><i class="bi bi-person-plus"></i> New account</a>
+    </div>
+</div>
+
+<div class="alert alert-danger app-alert">
+    <i class="bi bi-shield-exclamation"></i>
+    <span><strong>Treat this URL like a root password.</strong> Anyone holding the developer key can create accounts, edit any row, change settings and run SQL. There is no login prompt, navigation link or recovery flow. Rotate <code>developer_key</code> in <code>config/local.php</code> immediately if this URL is exposed.</span>
+</div>
+
+<div class="stat-grid mb-4">
+    <div class="stat-card">
+        <span class="stat-icon"><i class="bi bi-table"></i></span>
+        <div class="stat-label">Database tables</div>
+        <div class="stat-value"><?= (int) ($stats['tables'] ?? 0) ?></div>
+        <div class="stat-note"><?= e((string) ($stats['name'] ?? 'database')) ?></div>
+    </div>
+    <div class="stat-card">
+        <span class="stat-icon"><i class="bi bi-grid-3x3-gap"></i></span>
+        <div class="stat-label">Rows (estimated)</div>
+        <div class="stat-value"><?= number_format((int) ($stats['rows_estimate'] ?? 0)) ?></div>
+        <div class="stat-note">InnoDB estimates</div>
+    </div>
+    <div class="stat-card">
+        <span class="stat-icon"><i class="bi bi-hdd-stack"></i></span>
+        <div class="stat-label">Storage</div>
+        <div class="stat-value"><?= e($formatBytes((int) ($stats['size_bytes'] ?? 0))) ?></div>
+        <div class="stat-note">Data + index length</div>
+    </div>
+    <div class="stat-card">
+        <span class="stat-icon"><i class="bi bi-person-check"></i></span>
+        <div class="stat-label">Active sessions</div>
+        <div class="stat-value"><?= (int) $activeSessions ?></div>
+        <div class="stat-note">Last 30 minutes</div>
+    </div>
+    <div class="stat-card">
+        <span class="stat-icon"><i class="bi bi-shield-check"></i></span>
+        <div class="stat-label">Audit events today</div>
+        <div class="stat-value"><?= (int) $auditToday ?></div>
+        <div class="stat-note"><?= $healthOk ?> of <?= count($health) ?> health checks pass</div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-xl-7">
+        <div class="card mb-4">
+            <div class="card-header">
+                <strong>Recent accounts</strong>
+                <a class="small" href="<?= $console('users') ?>">View all users</a>
             </div>
-            <div class="page-actions">
-                <a class="btn btn-outline-secondary" href="<?= url('login') ?>"><i class="bi bi-box-arrow-in-right"></i> Sign-in page</a>
+            <div class="card-body p-0">
+                <?php if (empty($recentUsers)): ?>
+                    <div class="empty-state"><i class="bi bi-people"></i>No accounts exist yet.</div>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table mb-0 align-middle">
+                            <thead><tr><th>Account</th><th>Role</th><th>Status</th><th class="text-end">Created</th></tr></thead>
+                            <tbody>
+                            <?php foreach ($recentUsers as $row): ?>
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span class="avatar avatar-sm"><?= e(initials($row)) ?></span>
+                                            <span class="min-w-0">
+                                                <strong class="d-block text-truncate"><?= e(full_name($row)) ?></strong>
+                                                <span class="text-tiny text-muted d-block text-truncate">@<?= e($row['username']) ?> · <?= e($row['email']) ?></span>
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-soft"><?= e($row['role_name'] ?? $row['role']) ?></span>
+                                        <?= display_demo_badge($row['is_demo'] ?? 0) ?>
+                                    </td>
+                                    <td><?= status_badge((string) $row['status']) ?></td>
+                                    <td class="text-end text-tiny text-muted"><?= e(format_datetime($row['created_at'])) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
 
-        <?php App\Core\View::partial('partials.flash'); ?>
-
-        <div class="alert alert-danger app-alert">
-            <i class="bi bi-shield-exclamation"></i>
-            <span><strong>Treat this URL like a password.</strong> Anyone who knows it can create Dean invitation codes. Rotate <code>developer_key</code> in <code>config/local.php</code> if it is exposed.</span>
-        </div>
-
-        <?php if (!empty($generated)): ?>
-            <div class="card mb-4 border-success">
-                <div class="card-header bg-success-subtle"><strong><i class="bi bi-key"></i> New invitation code — copy it now</strong></div>
-                <div class="card-body">
-                    <p class="mb-2">This is the only time the full code is shown. Only a hash is stored.</p>
-                    <div class="input-group input-group-lg mb-2">
-                        <input class="form-control font-monospace" id="generatedInvite" type="text" value="<?= e($generated['code']) ?>" readonly>
-                        <button class="btn btn-outline-primary" type="button" data-copy="#generatedInvite"><i class="bi bi-clipboard"></i> Copy</button>
-                    </div>
-                    <div class="small text-muted">
-                        Role: Dean · Uses: <?= (int) $generated['max_uses'] ?> · Expires: <?= e(format_datetime($generated['expires_at'])) ?>
-                    </div>
-                </div>
+        <div class="card">
+            <div class="card-header">
+                <strong>Accounts by role</strong>
+                <span class="text-muted small">Live and demonstration records</span>
             </div>
-        <?php endif; ?>
-
-        <div class="row g-4">
-            <div class="col-xl-4">
-                <div class="card">
-                    <div class="card-header"><strong>Create a code</strong><span class="text-muted small">Dean accounts only</span></div>
-                    <div class="card-body">
-                        <form method="post" action="<?= url('developer/' . rawurlencode($developerKey)) ?>" data-single-submit>
-                            <?= csrf_field() ?>
-                            <div class="mb-3">
-                                <label class="form-label" for="maxUses">Maximum uses</label>
-                                <input class="form-control" id="maxUses" name="max_uses" type="number" min="1" max="<?= (int) \App\Services\InviteService::MAX_USES_LIMIT ?>" value="1">
-                                <div class="form-text">Use 1 for a single Dean. Values above 1 share one code.</div>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label" for="validDays">Valid for (days)</label>
-                                <input class="form-control" id="validDays" name="valid_days" type="number" min="1" max="<?= (int) \App\Services\InviteService::MAX_VALID_DAYS ?>" value="7">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label" for="note">Internal note</label>
-                                <input class="form-control" id="note" name="note" maxlength="190" placeholder="For example: Dean, College of Computer Studies">
-                                <div class="form-text">Visible only on this page.</div>
-                            </div>
-                            <button class="btn btn-primary w-100" type="submit"><i class="bi bi-plus-circle"></i> Create invitation code</button>
-                        </form>
-                    </div>
-                </div>
-                <div class="card mt-4">
-                    <div class="card-body small text-muted">
-                        <div class="mb-2"><strong>How it works</strong></div>
-                        <ol class="mb-0 ps-3">
-                            <li>Create a code and copy it.</li>
-                            <li>Send it privately to the intended Dean.</li>
-                            <li>The Dean opens <code>/dean-signup</code>, enters the code, and chooses their own password.</li>
-                            <li>Dean self-registration must be enabled under Settings → Evaluation access, and demo mode must be off.</li>
-                        </ol>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-xl-8">
-                <div class="card">
-                    <div class="card-header"><strong>Issued codes</strong><span class="text-muted small">Newest first · last 100</span></div>
-                    <div class="card-body p-0">
-                        <?php if (empty($invites)): ?>
-                            <div class="empty-state"><i class="bi bi-key"></i>No invitation codes have been created.</div>
-                        <?php else: ?>
-                            <div class="table-responsive">
-                                <table class="table mb-0 align-middle">
-                                    <thead>
-                                    <tr>
-                                        <th>Code</th>
-                                        <th>Note</th>
-                                        <th>Uses</th>
-                                        <th>Expires</th>
-                                        <th>Status</th>
-                                        <th class="text-end">Action</th>
-                                    </tr>
-                                    </thead>
-                                    <tbody>
-                                    <?php foreach ($invites as $invite): ?>
-                                        <?php
-                                        $status = \App\Services\InviteService::status($invite);
-                                        $badge = ['active' => 'badge-success', 'used' => 'badge-soft', 'expired' => 'badge-warning', 'revoked' => 'badge-danger'][$status] ?? 'badge-soft';
-                                        ?>
-                                        <tr>
-                                            <td><code><?= e($invite['code_hint']) ?></code></td>
-                                            <td class="small"><?= $invite['note'] !== null && $invite['note'] !== '' ? e($invite['note']) : '—' ?></td>
-                                            <td><?= (int) $invite['used_count'] ?> / <?= (int) $invite['max_uses'] ?></td>
-                                            <td class="small"><?= e(format_datetime($invite['expires_at'])) ?></td>
-                                            <td><span class="badge <?= e($badge) ?>"><?= e(ucfirst($status)) ?></span></td>
-                                            <td class="text-end">
-                                                <?php if ($status === 'active'): ?>
-                                                    <form method="post" action="<?= url('developer/' . rawurlencode($developerKey) . '/invites/' . (int) $invite['id'] . '/revoke') ?>" class="d-inline" data-confirm="Revoke this invitation code? It will stop working immediately.">
-                                                        <?= csrf_field() ?>
-                                                        <button class="btn btn-sm btn-outline-danger" type="submit"><i class="bi bi-slash-circle"></i> Revoke</button>
-                                                    </form>
-                                                <?php else: ?>
-                                                    <span class="text-muted small">—</span>
-                                                <?php endif; ?>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        <?php endif; ?>
-                    </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table mb-0 align-middle">
+                        <thead><tr><th>Role</th><th class="text-end">Total</th><th class="text-end">Live</th><th class="text-end">Demo</th><th class="text-end">Manage</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($roleCounts as $row): ?>
+                            <tr>
+                                <td><strong><?= e($row['name']) ?></strong><div class="text-tiny text-muted"><?= e($row['slug']) ?></div></td>
+                                <td class="text-end"><?= (int) $row['total'] ?></td>
+                                <td class="text-end"><?= (int) $row['live_count'] ?></td>
+                                <td class="text-end"><?= (int) $row['demo_count'] ?></td>
+                                <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="<?= $console('users?role=' . rawurlencode((string) $row['slug'])) ?>">Open</a></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
     </div>
 
+    <div class="col-xl-5">
+        <div class="card mb-4">
+            <div class="card-header">
+                <strong>Environment</strong>
+                <span class="badge <?= $demoMode ? 'badge-demo' : 'badge-success' ?>"><?= $demoMode ? 'Demo mode ON' : 'Live mode' ?></span>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0 small">
+                    <dt class="col-5 text-muted">Application</dt>
+                    <dd class="col-7">ICOTAS <?= e($appVersion) ?></dd>
+                    <dt class="col-5 text-muted">PHP</dt>
+                    <dd class="col-7"><code><?= e($phpVersion) ?></code></dd>
+                    <dt class="col-5 text-muted">Database</dt>
+                    <dd class="col-7"><?= e((string) ($stats['name'] ?? '—')) ?></dd>
+                    <dt class="col-5 text-muted">MySQL / MariaDB</dt>
+                    <dd class="col-7 mb-0"><?= e((string) ($stats['version'] ?? '—')) ?></dd>
+                </dl>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <strong>Health checks</strong>
+                <span class="text-muted small"><?= $healthOk ?>/<?= count($health) ?> passing</span>
+            </div>
+            <div class="card-body">
+                <ul class="list-clean small">
+                    <?php foreach ($health as $check): ?>
+                        <li>
+                            <span>
+                                <i class="bi <?= !empty($check['ok']) ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-warning' ?>"></i>
+                                <?= e($check['label']) ?>
+                                <span class="d-block text-tiny text-muted"><?= e($check['detail'] ?? '') ?></span>
+                            </span>
+                            <span class="badge <?= !empty($check['ok']) ? 'badge-success' : 'badge-warning' ?>"><?= !empty($check['ok']) ? 'Pass' : 'Check' ?></span>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <strong>Latest audit events</strong>
+                <a class="small" href="<?= $console('audit') ?>">Full log</a>
+            </div>
+            <div class="card-body p-0">
+                <?php if (empty($recentAudit)): ?>
+                    <div class="empty-state py-4"><i class="bi bi-shield-check"></i>No events recorded.</div>
+                <?php else: ?>
+                    <div class="list-group list-group-flush">
+                        <?php foreach ($recentAudit as $event): ?>
+                            <div class="list-group-item py-2">
+                                <div class="d-flex justify-content-between gap-2">
+                                    <code class="text-tiny"><?= e($event['action']) ?></code>
+                                    <span class="text-tiny text-muted text-nowrap"><?= e(time_ago($event['created_at'])) ?></span>
+                                </div>
+                                <div class="text-tiny text-muted text-truncate"><?= e($event['description'] ?: ($event['entity_type'] ?: 'No description')) ?></div>
+                                <div class="text-tiny text-muted">@<?= e($event['username'] ?? 'system') ?></div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>

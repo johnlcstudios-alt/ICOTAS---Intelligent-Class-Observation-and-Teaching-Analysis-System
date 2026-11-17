@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Core\Database;
 use App\Core\Security;
 use App\Models\User;
-use App\Services\InviteService;
 
 /**
  * Administrator (Dean / Academic Head) account provisioning.
@@ -86,27 +85,4 @@ test('a directly created administrator account carries the requested role and sc
 
     Database::execute('DELETE FROM user_sessions WHERE user_id = ?', [$id]);
     Database::execute('DELETE FROM users WHERE id = ?', [$id]);
-});
-
-test('dean invitations issued for the administrator module are single-purpose and hashed', function (): void {
-    $service = new InviteService();
-    $invite = $service->create('dean', 1, 3, 'unit administrator invitation', null);
-
-    $stored = Database::fetch('SELECT * FROM registration_invites WHERE id = ?', [$invite['id']]);
-    assertTrue($stored !== null, 'invitation row exists');
-    assertSame(InviteService::hash($invite['code']), (string) $stored['code_hash'], 'only the hash of the code is stored');
-    assertFalse(str_contains((string) $stored['code_hash'], InviteService::normalize($invite['code'])), 'the plaintext code is never stored');
-
-    $deanRoleId = (int) Database::scalar('SELECT id FROM roles WHERE slug = "dean" LIMIT 1', [], 0);
-    assertSame($deanRoleId, (int) $stored['role_id'], 'the invitation grants the Dean role only');
-
-    $redeemed = Database::transaction(function () use ($service, $invite): bool {
-        $locked = $service->lockRedeemable($invite['code'], 'dean');
-        $service->consume((int) $locked['id']);
-        return true;
-    });
-    assertTrue($redeemed, 'the invitation redeems inside a transaction');
-    assertSame('used', InviteService::status((array) Database::fetch('SELECT * FROM registration_invites WHERE id = ?', [$invite['id']])), 'a single-use invitation is spent');
-
-    Database::execute('DELETE FROM registration_invites WHERE id = ?', [$invite['id']]);
 });

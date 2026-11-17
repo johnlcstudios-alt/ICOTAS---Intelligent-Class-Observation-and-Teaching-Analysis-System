@@ -110,7 +110,7 @@ Services own multi-step rules that must stay consistent across controllers:
 - `EvaluationService` — access state, validation, anonymous submission.
 - `SurveyService` — versioned survey authoring and publication.
 - `UatService` — invitations, rating validation, interpretation.
-- `InviteService` — hashed Dean invitation creation, locking, consumption, revocation.
+- `DeveloperDataService` — schema-driven table browsing/writes and guarded SQL for the developer console.
 - `ReportService` — report assembly and CSV/PDF export.
 - `DemoService` — fictional dataset generation/reset.
 - `DefaultDataService` — standard templates and UAT form.
@@ -132,7 +132,7 @@ Precedence:
 
 The application key must be a random 64-character hex string. It protects encrypted QR/UAT tokens and HMAC-based IP hashing. Changing it invalidates re-displayable tokens; it does not destroy stored responses.
 
-`developer_key` is a separate high-entropy secret. It is embedded in the hidden developer URL (`/developer/{key}`) used to issue Dean invitation codes. Leave it empty to disable the page. It is not a user password and must not be reused across installations.
+`developer_key` is a separate high-entropy secret. It is embedded in the hidden developer URL (`/developer/{key}`) used to manage every account, record, setting, and table in the installation. Leave it empty to disable the page. It is not a user password and must not be reused across installations.
 
 `config/local.php` is git-ignored and denied by `.htaccess`.
 

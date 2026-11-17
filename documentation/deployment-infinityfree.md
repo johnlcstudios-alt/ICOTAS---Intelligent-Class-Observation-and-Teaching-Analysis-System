@@ -112,7 +112,7 @@ In the control panel, choose the highest available PHP 8.x version. The code tar
    - Seeds 7 survey templates and the ISO/IEC 25010 UAT form.
    - Writes `config/local.php` with a random application key and private developer key.
    - Writes `storage/installed.lock`.
-   - Displays the hidden developer URL **once**. Copy it before leaving the page; it is the only way to issue Dean invitation codes.
+   - Displays the hidden developer URL **once**. Copy it before leaving the page; it is the only way to open the unlinked developer console, which can manage every account and record.
 6. If it reports a warning about default definitions, sign in and create them in the interface; the database is still installed.
 
 ### If the installer cannot write files
@@ -124,11 +124,11 @@ The host may block PHP file writes. Use the manual fallback below. Do not repeat
 Do not re-import `database/schema.sql` over an existing database and do not re-run `install.php`.
 
 1. Back up the database and `config/local.php`.
-2. In phpMyAdmin, run `database/migrations/2026_11_10_dean_invites_and_forced_password.sql` **before** uploading the new application files.
+2. In phpMyAdmin, run `database/migrations/2026_11_17_remove_registration_invites.sql` **before** uploading the new application files.
 3. Upload the new runtime files, keeping the server's existing `config/local.php`.
-4. Confirm `registration_invites` exists, `users.must_change_password` exists, and `allow_dean_signup` is `1`.
+4. Confirm `registration_invites` no longer exists, `users.must_change_password` still exists, and no `allow_dean_signup` setting remains.
 5. If `config/local.php` has no `developer_key`, add one generated with `bin2hex(random_bytes(24))`; otherwise the developer page stays disabled.
-6. Sign in as Dean and verify existing accounts still work. New instructor accounts will receive temporary passwords; existing accounts are unaffected by the migration.
+6. Sign in as Dean and verify existing accounts still work, then create new accounts directly with no invitation code.
 
 ## 7. Post-installation (mandatory)
 
@@ -142,7 +142,7 @@ Do not re-import `database/schema.sql` over an existing database and do not re-r
 8. Set the institution name, current academic year, and current semester.
 9. Create or import real users.
 10. Decide whether student self-registration should remain enabled under **Settings → Evaluation access**. Disable `allow_student_signup` if accounts must be issued centrally; self-registered students are not auto-enrolled.
-11. Decide whether invitation-only Dean registration should stay enabled (`allow_dean_signup`). Store the private developer URL offline; it is never linked in the interface.
+11. Store the private developer URL offline; it is never linked in the interface. Rotate `developer_key` if it is exposed.
 12. Replace/remove any test accounts and set the privacy threshold to at least 3.
 13. Configure HTTPS and confirm the session cookie is secure.
 
