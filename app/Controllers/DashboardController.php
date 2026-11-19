@@ -14,8 +14,9 @@ final class DashboardController extends BaseController
     {
         $this->requireAdmin();
         $demo = $this->demo();
+        $deptId = $this->scopeDepartmentId();
         $service = new AnalyticsService();
-        $data = $service->deanDashboard($demo);
+        $data = $service->deanDashboard($demo, $deptId);
 
         $recentSessions = Database::fetchAll(
             'SELECT es.*, a.title, c.code AS course_code, sec.code AS section_code,
@@ -26,8 +27,9 @@ final class DashboardController extends BaseController
              JOIN courses c ON c.id = a.course_id
              JOIN sections sec ON sec.id = a.section_id
              JOIN users i ON i.id = a.instructor_id
-             WHERE es.is_demo = ? ORDER BY es.opens_at DESC LIMIT 6',
-            [$demo ? 1 : 0]
+             WHERE es.is_demo = ? ' . ($deptId !== null ? 'AND i.department_id = ?' : '') . '
+             ORDER BY es.opens_at DESC LIMIT 6',
+            $deptId !== null ? [$demo ? 1 : 0, $deptId] : [$demo ? 1 : 0]
         );
 
         $unread = (new NotificationService())->unreadCount((int) Auth::id());

@@ -39,6 +39,12 @@ final class AcademicController extends BaseController
             }
             $where .= ' AND (' . implode(' OR ', $parts) . ')';
         }
+        // Department scope: Dean/Academic Head can only manage their own department.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null && $definition['scoped']) {
+            $where .= ' AND ' . $this->departmentScopeColumn($definition['table']) . ' = ?';
+            $params[] = $deptId;
+        }
         $total = (int) Database::scalar(
             'SELECT COUNT(*) FROM ' . $definition['from'] . ' WHERE ' . $where,
             $params,
@@ -95,6 +101,14 @@ final class AcademicController extends BaseController
         $definition = $this->definition($entity);
         $data = $this->validated($definition, null);
         $data = $this->applyScope($definition, $data);
+        // Department scope: force department_id to the scoped department.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null && $definition['scoped']) {
+            $scopeCol = $this->departmentScopeColumn($definition['table']);
+            // Map the column alias back to the actual column name for INSERT.
+            $actualCol = str_replace(['d.', 'p.', 'c.'], '', $scopeCol);
+            $data[$actualCol] = $deptId;
+        }
 
         $columns = array_keys($data);
         $placeholders = implode(', ', array_fill(0, count($columns), '?'));
@@ -122,6 +136,18 @@ final class AcademicController extends BaseController
         if (!$record || ($definition['scoped'] && (int) $record['is_demo'] !== ($this->demo() ? 1 : 0))) {
             abort(404);
         }
+        // Department scope check for individual record access.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null && $definition['scoped']) {
+            $scopeCol = $this->departmentScopeColumn($definition['table']);
+            $scopeVal = Database::scalar(
+                'SELECT ' . $scopeCol . ' FROM ' . $definition['table'] . ' WHERE id = ? LIMIT 1',
+                [(int) $id]
+            );
+            if ((int) $scopeVal !== $deptId) {
+                abort(404);
+            }
+        }
         $this->view('dean/academic/form', [
             'pageTitle' => 'Edit ' . $definition['singular'],
             'entity' => $entity,
@@ -140,6 +166,18 @@ final class AcademicController extends BaseController
         $record = Database::fetch('SELECT * FROM ' . $definition['table'] . ' WHERE id = ? LIMIT 1', [$id]);
         if (!$record || ($definition['scoped'] && (int) $record['is_demo'] !== ($this->demo() ? 1 : 0))) {
             abort(404);
+        }
+        // Department scope check.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null && $definition['scoped']) {
+            $scopeCol = $this->departmentScopeColumn($definition['table']);
+            $scopeVal = Database::scalar(
+                'SELECT ' . $scopeCol . ' FROM ' . $definition['table'] . ' WHERE id = ? LIMIT 1',
+                [$id]
+            );
+            if ((int) $scopeVal !== $deptId) {
+                abort(404);
+            }
         }
         $data = $this->validated($definition, $id);
         unset($data['is_demo']);
@@ -173,6 +211,18 @@ final class AcademicController extends BaseController
         if (!$record || ($definition['scoped'] && (int) $record['is_demo'] !== ($this->demo() ? 1 : 0))) {
             abort(404);
         }
+        // Department scope check.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null && $definition['scoped']) {
+            $scopeCol = $this->departmentScopeColumn($definition['table']);
+            $scopeVal = Database::scalar(
+                'SELECT ' . $scopeCol . ' FROM ' . $definition['table'] . ' WHERE id = ? LIMIT 1',
+                [$id]
+            );
+            if ((int) $scopeVal !== $deptId) {
+                abort(404);
+            }
+        }
         if (isset($definition['guard'])) {
             $block = $definition['guard']($id, $record);
             if ($block !== null) {
@@ -201,7 +251,8 @@ final class AcademicController extends BaseController
 
         $demo = $this->demo();
         $scope = $demo ? 1 : 0;
-        $departments = $this->pairs($this->academic->departments($demo, true), 'id', static fn ($r) => $r['code'] . ' — ' . $r['name']);
+        $deptId = $this->scopeDepartmentId();
+        $departments = $this->pairs($this->academic->departments($demo, true, $deptId), 'id', static fn ($r) => $r['code'] . ' — ' . $r['name']);
         $programs = $this->pairs($this->academic->programs($demo, null, true), 'id', static fn ($r) => $r['code'] . ' — ' . $r['name']);
         $courses = $this->pairs($this->academic->courses($demo, null, null, true), 'id', static fn ($r) => $r['code'] . ' — ' . $r['title']);
         $sections = $this->pairs($this->academic->sections($demo, null, true), 'id', static fn ($r) => $r['code'] . ' — ' . ($r['program_code'] ?? ''));
@@ -611,6 +662,24 @@ final class AcademicController extends BaseController
             $out[] = ['value' => (string) $row[$valueKey], 'label' => $label($row)];
         }
         return $out;
+    }
+
+    /**
+     * Returns the department_id column name for a given table, used for
+     * department-scoped queries.
+     */
+    private function departmentScopeColumn(string $table): string
+    {
+        $map = [
+            'departments' => 'd.id',
+            'programs' => 'p.department_id',
+            'courses' => 'c.department_id',
+            'sections' => 'p.department_id',
+            'class_schedules' => 'c.department_id',
+            'instructor_assignments' => 'c.department_id',
+            'student_enrollments' => 'c.department_id',
+        ];
+        return $map[$table] ?? 'id';
     }
 
     private function dayOptions(): array

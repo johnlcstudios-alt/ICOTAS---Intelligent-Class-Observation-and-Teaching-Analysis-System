@@ -29,6 +29,10 @@ final class AuditLog extends Model
             $where[] = 'a.user_id = ?';
             $params[] = (int) $filters['user_id'];
         }
+        if (!empty($filters['department_id'])) {
+            $where[] = 'u.department_id = ?';
+            $params[] = (int) $filters['department_id'];
+        }
         if (!empty($filters['from'])) {
             $where[] = 'a.created_at >= ?';
             $params[] = $filters['from'] . ' 00:00:00';
@@ -38,7 +42,7 @@ final class AuditLog extends Model
             $params[] = $filters['to'] . ' 23:59:59';
         }
         $clause = implode(' AND ', $where);
-        $total = (int) Database::scalar('SELECT COUNT(*) FROM audit_logs a WHERE ' . $clause, $params, 0);
+        $total = (int) Database::scalar('SELECT COUNT(*) FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id WHERE ' . $clause, $params, 0);
         $page = max(1, $page);
         $offset = ($page - 1) * $perPage;
         return [

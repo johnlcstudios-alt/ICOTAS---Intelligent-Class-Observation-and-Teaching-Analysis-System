@@ -17,17 +17,21 @@ final class UAT extends Model
         'Maintainability',
     ];
 
-    public function surveys(bool $demo): array
+    public function surveys(bool $demo, ?int $departmentId = null): array
     {
-        return Database::fetchAll(
-            'SELECT us.*, u.first_name, u.last_name,
+        $sql = 'SELECT us.*, u.first_name, u.last_name,
                     (SELECT COUNT(*) FROM uat_questions q WHERE q.uat_survey_id = us.id) AS question_count,
                     (SELECT COUNT(*) FROM uat_respondents rr WHERE rr.uat_survey_id = us.id) AS respondent_count,
                     (SELECT COUNT(*) FROM uat_responses r WHERE r.uat_survey_id = us.id) AS response_count
-             FROM uat_surveys us LEFT JOIN users u ON u.id = us.created_by
-             WHERE us.is_demo = ? ORDER BY us.created_at DESC',
-            [$demo ? 1 : 0]
-        );
+                 FROM uat_surveys us LEFT JOIN users u ON u.id = us.created_by
+                 WHERE us.is_demo = ?';
+        $params = [$demo ? 1 : 0];
+        if ($departmentId !== null) {
+            $sql .= ' AND u.department_id = ?';
+            $params[] = $departmentId;
+        }
+        $sql .= ' ORDER BY us.created_at DESC';
+        return Database::fetchAll($sql, $params);
     }
 
     public function findSurvey(int $id): ?array

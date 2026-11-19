@@ -148,6 +148,43 @@ final class Auth
         return self::role() === 'dean';
     }
 
+    /**
+     * Returns the department ID that scopes this user's data access.
+     * Dean and Academic Head accounts are scoped to their department_id.
+     * Developer accounts are unscoped (null).
+     *
+     * @return int|null
+     */
+    public static function scopeDepartmentId(): ?int
+    {
+        $user = self::user();
+        if (!$user) {
+            return null;
+        }
+        $role = (string) $user['role'];
+        if (in_array($role, ['dean', 'academic_head'], true)) {
+            $deptId = (int) ($user['department_id'] ?? 0);
+            return $deptId > 0 ? $deptId : null;
+        }
+        return null;
+    }
+
+    /**
+     * Returns a SQL WHERE clause fragment for department-scoped queries,
+     * or null when the user is unscoped (developer, etc.).
+     *
+     * @param string $tableAlias Optional table alias prefix (e.g. 'u.', 'c.', 'd.')
+     * @return string|null SQL fragment like "u.department_id = 5" or null
+     */
+    public static function scopeClause(string $tableAlias = ''): ?string
+    {
+        $deptId = self::scopeDepartmentId();
+        if ($deptId === null) {
+            return null;
+        }
+        return ($tableAlias !== '' ? $tableAlias : '') . 'department_id = ' . $deptId;
+    }
+
     public static function mustChangePassword(): bool
     {
         $user = self::user();

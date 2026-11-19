@@ -34,6 +34,65 @@ abstract class BaseController extends Controller
         \App\Core\Auth::requireDean();
     }
 
+    /**
+     * Returns the department ID that scopes this user's data access.
+     * Dean and Academic Head accounts are scoped to their department_id.
+     * Developer accounts are unscoped (null).
+     *
+     * @return int|null
+     */
+    protected function scopeDepartmentId(): ?int
+    {
+        return \App\Core\Auth::scopeDepartmentId();
+    }
+
+    /**
+     * Returns a SQL WHERE clause fragment for department-scoped queries,
+     * or null when the user is unscoped (developer, etc.).
+     *
+     * @param string $tableAlias Optional table alias prefix (e.g. 'u.', 'c.', 'd.')
+     * @return string|null SQL fragment like "u.department_id = 5" or null
+     */
+    protected function scopeClause(string $tableAlias = ''): ?string
+    {
+        return \App\Core\Auth::scopeClause($tableAlias);
+    }
+
+    /**
+     * Adds department_id to a filters array when the user is department-scoped.
+     * Dean/Academic Head users can only see records in their own department.
+     *
+     * @param array $filters Existing filter key-value pairs
+     * @return array Filters with department_id added when scoped
+     */
+    protected function scopeFilters(array $filters = []): array
+    {
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null) {
+            $filters['department_id'] = $deptId;
+        }
+        return $filters;
+    }
+
+    /**
+     * Validates that a record belongs to the user's department scope.
+     * Returns true when unscoped (developer) or when the record's department_id matches.
+     */
+    protected function inDepartmentScope(?array $row): bool
+    {
+        if (!$row) {
+            return false;
+        }
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId === null) {
+            return true; // Developer/unscoped: can see everything
+        }
+        if (!isset($row['department_id'])) {
+            return false;
+        }
+        return (int) $row['department_id'] === $deptId;
+    }
+
     protected function audit(string $action, ?string $entityType = null, ?int $entityId = null, ?string $description = null): void
     {
         (new AuditService())->record($action, $entityType, $entityId, $description);

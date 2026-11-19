@@ -38,9 +38,14 @@ final class UserController extends BaseController
         if (!Auth::isDean()) {
             $filters['exclude_role'] = 'dean';
         }
+        // Department scope: Dean/Academic Head can only see their own department.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null) {
+            $filters['department_id'] = $deptId;
+        }
         $pagination = $this->users->paginate($filters, $this->page(), 15);
         $roles = $this->assignableRoles();
-        $counts = $this->users->countsByRole($this->demo());
+        $counts = $this->users->countsByRole($this->demo(), $deptId);
 
         $this->view('dean/users/index', [
             'pageTitle' => 'User Management',
@@ -48,7 +53,7 @@ final class UserController extends BaseController
             'filters' => $filters,
             'roles' => $roles,
             'counts' => $counts,
-            'departments' => $this->academic->departmentOptions($this->demo()),
+            'departments' => $this->academic->departmentOptions($this->demo(), $deptId),
             'demo' => $this->demo(),
         ]);
     }
@@ -92,6 +97,11 @@ final class UserController extends BaseController
 
         $data['is_demo'] = $this->demo() ? 1 : 0;
         $data['status'] = $this->postString('status', 'active');
+        // Department scope: Academic Heads can only create accounts in their own department.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null && empty($data['department_id'])) {
+            $data['department_id'] = $deptId;
+        }
         $id = $this->users->createAccount($data);
         $this->audit('user.create', 'user', $id, 'Created account ' . $data['username'] . ' (' . $role . ')');
 
@@ -398,6 +408,8 @@ final class UserController extends BaseController
      * either administrative role, while an Academic Head may manage Academic
      * Head accounts but never a Dean. Administrators may always open their own
      * record; role and status changes to self are neutralised in update().
+     * Department scope: Academic Heads can only manage users in their own
+     * department.
      */
     private function guardAdministrativeTarget(array $target): void
     {
@@ -410,17 +422,24 @@ final class UserController extends BaseController
         if ((string) ($target['role'] ?? '') === 'dean') {
             abort(403, 'Only a Dean may manage a Dean account.');
         }
+        // Academic Heads are department-scoped: can only manage users in their
+        // own department.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null && (int) ($target['department_id'] ?? 0) !== $deptId) {
+            abort(403, 'You can only manage accounts in your own department.');
+        }
     }
 
     private function formData(?array $user): array
     {
         $demo = $user ? (int) $user['is_demo'] === 1 : $this->demo();
+        $deptId = $this->scopeDepartmentId();
         return [
             'pageTitle' => $user ? 'Edit User' : 'New User',
             'user' => $user,
             'roles' => $this->assignableRoles(),
-            'departments' => $this->academic->departments($demo, true),
-            'programs' => $this->academic->programs($demo, null, true),
+            'departments' => $this->academic->departments($demo, true, $deptId),
+            'programs' => $this->academic->programs($demo, $deptId, true),
             'sections' => $this->academic->sections($demo, null, true),
             'demo' => $demo,
         ];

@@ -37,6 +37,9 @@ final class User extends Model
 
     /**
      * Paginated account browser for the Dean / Academic Head.
+     *
+     * @param array $filters Filter key-value pairs. When 'department_id' is set,
+     *   results are limited to that department (used for Dean/Academic Head scope).
      */
     public function paginate(array $filters = [], int $page = 1, int $perPage = 15): array
     {
@@ -134,7 +137,7 @@ final class User extends Model
             'UPDATE users SET role_id = ?, username = ?, email = ?, first_name = ?, middle_name = ?, last_name = ?,
                     suffix = ?, employee_number = ?, student_number = ?, department_id = ?, program_id = ?,
                     section_id = ?, year_level = ?, phone = ?, status = ?, updated_at = NOW()
-             WHERE id = ?',
+                 WHERE id = ?',
             [
                 $data['role_id'], $data['username'], $data['email'], $data['first_name'],
                 $data['middle_name'] ?? null, $data['last_name'], $data['suffix'] ?? null,
@@ -168,13 +171,19 @@ final class User extends Model
         );
     }
 
-    public function countsByRole(bool $demo = false): array
+    public function countsByRole(bool $demo = false, ?int $departmentId = null): array
     {
+        $where = 'u.is_demo = ?';
+        $params = [$demo ? 1 : 0];
+        if ($departmentId !== null) {
+            $where .= ' AND u.department_id = ?';
+            $params[] = $departmentId;
+        }
         $rows = Database::fetchAll(
             'SELECT r.slug, COUNT(u.id) AS total
-             FROM roles r LEFT JOIN users u ON u.role_id = r.id AND u.is_demo = ?
+             FROM roles r LEFT JOIN users u ON u.role_id = r.id AND ' . $where . '
              GROUP BY r.slug',
-            [$demo ? 1 : 0]
+            $params
         );
         $out = [];
         foreach ($rows as $row) {
@@ -183,28 +192,46 @@ final class User extends Model
         return $out;
     }
 
-    public function instructors(bool $demo = false, bool $activeOnly = true): array
+    public function instructors(bool $demo = false, bool $activeOnly = true, ?int $departmentId = null): array
     {
+        $where = 'r.slug = ? AND u.is_demo = ?';
+        $params = ['instructor', $demo ? 1 : 0];
+        if ($departmentId !== null) {
+            $where .= ' AND u.department_id = ?';
+            $params[] = $departmentId;
+        }
+        if ($activeOnly) {
+            $where .= " AND u.status = 'active'";
+        }
         return Database::fetchAll(
             'SELECT u.*, d.code AS department_code FROM users u
              JOIN roles r ON r.id = u.role_id
              LEFT JOIN departments d ON d.id = u.department_id
-             WHERE r.slug = ? AND u.is_demo = ?' . ($activeOnly ? " AND u.status = 'active'" : '') . '
+             WHERE ' . $where . '
              ORDER BY u.last_name, u.first_name',
-            ['instructor', $demo ? 1 : 0]
+            $params
         );
     }
 
-    public function students(bool $demo = false, bool $activeOnly = true): array
+    public function students(bool $demo = false, bool $activeOnly = true, ?int $departmentId = null): array
     {
+        $where = 'r.slug = ? AND u.is_demo = ?';
+        $params = ['student', $demo ? 1 : 0];
+        if ($departmentId !== null) {
+            $where .= ' AND u.department_id = ?';
+            $params[] = $departmentId;
+        }
+        if ($activeOnly) {
+            $where .= " AND u.status = 'active'";
+        }
         return Database::fetchAll(
             'SELECT u.*, p.code AS program_code, s.code AS section_code FROM users u
              JOIN roles r ON r.id = u.role_id
              LEFT JOIN programs p ON p.id = u.program_id
              LEFT JOIN sections s ON s.id = u.section_id
-             WHERE r.slug = ? AND u.is_demo = ?' . ($activeOnly ? " AND u.status = 'active'" : '') . '
+             WHERE ' . $where . '
              ORDER BY u.last_name, u.first_name',
-            ['student', $demo ? 1 : 0]
+            $params
         );
     }
 
@@ -214,32 +241,45 @@ final class User extends Model
      *
      * @return array<int,array<string,mixed>>
      */
-    public function administrators(bool $demo = false, bool $activeOnly = false): array
+    public function administrators(bool $demo = false, bool $activeOnly = false, ?int $departmentId = null): array
     {
+        $where = "r.slug IN ('dean', 'academic_head') AND u.is_demo = ?";
+        $params = [$demo ? 1 : 0];
+        if ($departmentId !== null) {
+            $where .= ' AND u.department_id = ?';
+            $params[] = $departmentId;
+        }
+        if ($activeOnly) {
+            $where .= " AND u.status = 'active'";
+        }
         return Database::fetchAll(
             "SELECT u.*, r.slug AS role, r.name AS role_name, d.code AS department_code, d.name AS department_name
              FROM users u
              JOIN roles r ON r.id = u.role_id
              LEFT JOIN departments d ON d.id = u.department_id
-             WHERE r.slug IN ('dean', 'academic_head') AND u.is_demo = ?"
-            . ($activeOnly ? " AND u.status = 'active'" : '') . '
+             WHERE " . $where . '
              ORDER BY FIELD(r.slug, \'dean\', \'academic_head\'), u.status ASC, u.last_name ASC, u.first_name ASC',
-            [$demo ? 1 : 0]
+            $params
         );
     }
 
     /**
      * @return array<string,int> role slug => count for administrative accounts
      */
-    public function countAdministrators(bool $demo = false): array
+    public function countAdministrators(bool $demo = false, ?int $departmentId = null): array
     {
+        $where = "r.slug IN ('dean', 'academic_head') AND u.is_demo = ?";
+        $params = [$demo ? 1 : 0];
+        if ($departmentId !== null) {
+            $where .= ' AND u.department_id = ?';
+            $params[] = $departmentId;
+        }
         $rows = Database::fetchAll(
             "SELECT r.slug, COUNT(u.id) AS total
              FROM roles r
-             LEFT JOIN users u ON u.role_id = r.id AND u.is_demo = ?
-             WHERE r.slug IN ('dean', 'academic_head')
-             GROUP BY r.slug",
-            [$demo ? 1 : 0]
+             LEFT JOIN users u ON u.role_id = r.id AND " . $where . '
+             GROUP BY r.slug',
+            $params
         );
         $out = ['dean' => 0, 'academic_head' => 0];
         foreach ($rows as $row) {
@@ -248,12 +288,20 @@ final class User extends Model
         return $out;
     }
 
-    public function countByRole(string $slug, bool $demo = false, bool $activeOnly = false): int
+    public function countByRole(string $slug, bool $demo = false, bool $activeOnly = false, ?int $departmentId = null): int
     {
+        $where = 'r.slug = ? AND u.is_demo = ?';
+        $params = [$slug, $demo ? 1 : 0];
+        if ($departmentId !== null) {
+            $where .= ' AND u.department_id = ?';
+            $params[] = $departmentId;
+        }
+        if ($activeOnly) {
+            $where .= " AND u.status = 'active'";
+        }
         return (int) Database::scalar(
-            'SELECT COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id
-             WHERE r.slug = ? AND u.is_demo = ?' . ($activeOnly ? " AND u.status = 'active'" : ''),
-            [$slug, $demo ? 1 : 0],
+            'SELECT COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id WHERE ' . $where,
+            $params,
             0
         );
     }

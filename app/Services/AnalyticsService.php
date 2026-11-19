@@ -21,56 +21,74 @@ final class AnalyticsService
         $this->evaluations = new Evaluation();
     }
 
-    public function deanDashboard(bool $demo): array
+    public function deanDashboard(bool $demo, ?int $departmentId = null): array
     {
         $scope = $demo ? 1 : 0;
+        $deptClause = $departmentId !== null ? ' AND u.department_id = ?' : '';
+        $deptParams = $departmentId !== null ? [$scope, $departmentId] : [$scope];
         $instructors = (int) Database::scalar(
-            'SELECT COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id WHERE r.slug = "instructor" AND u.is_demo = ? AND u.status = "active"',
-            [$scope],
+            'SELECT COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id WHERE r.slug = "instructor" AND u.is_demo = ? AND u.status = "active"' . $deptClause,
+            $deptParams,
             0
         );
         $students = (int) Database::scalar(
-            'SELECT COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id WHERE r.slug = "student" AND u.is_demo = ? AND u.status = "active"',
-            [$scope],
+            'SELECT COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id WHERE r.slug = "student" AND u.is_demo = ? AND u.status = "active"' . $deptClause,
+            $deptParams,
             0
         );
-        $departments = (int) Database::scalar('SELECT COUNT(*) FROM departments WHERE is_demo = ? AND status = "active"', [$scope], 0);
-        $programs = (int) Database::scalar('SELECT COUNT(*) FROM programs WHERE is_demo = ? AND status = "active"', [$scope], 0);
-        $courses = (int) Database::scalar('SELECT COUNT(*) FROM courses WHERE is_demo = ? AND status = "active"', [$scope], 0);
-        $sections = (int) Database::scalar('SELECT COUNT(*) FROM sections WHERE is_demo = ? AND status = "active"', [$scope], 0);
+        $departments = (int) Database::scalar('SELECT COUNT(*) FROM departments WHERE is_demo = ? AND status = "active"' . ($departmentId !== null ? ' AND id = ?' : ''), $departmentId !== null ? [$scope, $departmentId] : [$scope], 0);
+        $programs = (int) Database::scalar('SELECT COUNT(*) FROM programs WHERE is_demo = ? AND status = "active"' . ($departmentId !== null ? ' AND department_id = ?' : ''), $departmentId !== null ? [$scope, $departmentId] : [$scope], 0);
+        $courses = (int) Database::scalar('SELECT COUNT(*) FROM courses WHERE is_demo = ? AND status = "active"' . ($departmentId !== null ? ' AND department_id = ?' : ''), $departmentId !== null ? [$scope, $departmentId] : [$scope], 0);
+        $sections = (int) Database::scalar('SELECT COUNT(*) FROM sections s JOIN programs p ON p.id = s.program_id WHERE s.is_demo = ? AND s.status = "active"' . ($departmentId !== null ? ' AND p.department_id = ?' : ''), $departmentId !== null ? [$scope, $departmentId] : [$scope], 0);
         $activeSessions = (int) Database::scalar(
-            "SELECT COUNT(*) FROM evaluation_sessions WHERE is_demo = ? AND status = 'active' AND NOW() BETWEEN opens_at AND expires_at",
-            [$scope],
+            "SELECT COUNT(*) FROM evaluation_sessions es
+             JOIN evaluation_assignments a ON a.id = es.assignment_id
+             JOIN users i ON i.id = a.instructor_id
+             WHERE es.is_demo = ? AND es.status = 'active' AND NOW() BETWEEN es.opens_at AND es.expires_at" . ($departmentId !== null ? ' AND i.department_id = ?' : ''),
+            $departmentId !== null ? [$scope, $departmentId] : [$scope],
             0
         );
         $completedSessions = (int) Database::scalar(
-            "SELECT COUNT(*) FROM evaluation_sessions WHERE is_demo = ? AND status IN ('expired','closed')",
-            [$scope],
+            "SELECT COUNT(*) FROM evaluation_sessions es
+             JOIN evaluation_assignments a ON a.id = es.assignment_id
+             JOIN users i ON i.id = a.instructor_id
+             WHERE es.is_demo = ? AND es.status IN ('expired','closed')" . ($departmentId !== null ? ' AND i.department_id = ?' : ''),
+            $departmentId !== null ? [$scope, $departmentId] : [$scope],
             0
         );
         $totalResponses = (int) Database::scalar(
-            'SELECT COUNT(*) FROM evaluation_responses r JOIN evaluation_sessions es ON es.id = r.evaluation_session_id WHERE es.is_demo = ?',
-            [$scope],
+            'SELECT COUNT(*) FROM evaluation_responses r
+             JOIN evaluation_sessions es ON es.id = r.evaluation_session_id
+             JOIN evaluation_assignments a ON a.id = es.assignment_id
+             JOIN users i ON i.id = a.instructor_id
+             WHERE es.is_demo = ?' . ($departmentId !== null ? ' AND i.department_id = ?' : ''),
+            $departmentId !== null ? [$scope, $departmentId] : [$scope],
             0
         );
         $pending = (int) Database::scalar(
             "SELECT COUNT(*) FROM evaluation_participation ep
              JOIN evaluation_sessions es ON es.id = ep.evaluation_session_id
-             WHERE es.is_demo = ? AND es.status = 'active' AND NOW() BETWEEN es.opens_at AND es.expires_at AND ep.status = 'pending'",
-            [$scope],
+             JOIN evaluation_assignments a ON a.id = es.assignment_id
+             JOIN users i ON i.id = a.instructor_id
+             WHERE es.is_demo = ? AND es.status = 'active' AND NOW() BETWEEN es.opens_at AND es.expires_at AND ep.status = 'pending'" . ($departmentId !== null ? ' AND i.department_id = ?' : ''),
+            $departmentId !== null ? [$scope, $departmentId] : [$scope],
             0
         );
 
-        $base = $this->analytics->filteredCounts([], $demo);
-        $rating = $this->analytics->filteredRating([], $demo);
-        $sentiment = $this->analytics->sentimentDistribution([], $demo);
-        $categories = $this->analytics->categoryAverages([], $demo);
-        $semesterTrend = $this->analytics->semesterTrend([], $demo);
-        $sessionTrend = $this->analytics->sessionTrend([], $demo, 8);
-        $comparison = $this->analytics->instructorComparison([], $demo);
-        $departmentComparison = $this->analytics->departmentComparison([], $demo);
-        $ratingDistribution = $this->analytics->ratingDistribution([], $demo);
-        $themes = $this->analytics->themeCounts([], $demo);
+        $filters = [];
+        if ($departmentId !== null) {
+            $filters['department_id'] = $departmentId;
+        }
+        $base = $this->analytics->filteredCounts($filters, $demo);
+        $rating = $this->analytics->filteredRating($filters, $demo);
+        $sentiment = $this->analytics->sentimentDistribution($filters, $demo);
+        $categories = $this->analytics->categoryAverages($filters, $demo);
+        $semesterTrend = $this->analytics->semesterTrend($filters, $demo);
+        $sessionTrend = $this->analytics->sessionTrend($filters, $demo, 8);
+        $comparison = $this->analytics->instructorComparison($filters, $demo);
+        $departmentComparison = $this->analytics->departmentComparison($filters, $demo);
+        $ratingDistribution = $this->analytics->ratingDistribution($filters, $demo);
+        $themes = $this->analytics->themeCounts($filters, $demo);
 
         $threshold = max(3, Setting::privacyThreshold());
         $attention = [];
@@ -83,17 +101,22 @@ final class AnalyticsService
 
         $recommendationsOpen = (int) Database::scalar(
             "SELECT COUNT(*) FROM instructor_recommendations ir JOIN users u ON u.id = ir.instructor_id
-             WHERE u.is_demo = ? AND ir.status IN ('open','acknowledged','in_progress')",
-            [$scope],
+             WHERE u.is_demo = ? AND ir.status IN ('open','acknowledged','in_progress')" . ($departmentId !== null ? ' AND u.department_id = ?' : ''),
+            $departmentId !== null ? [$scope, $departmentId] : [$scope],
             0
         );
-        $observations = (int) Database::scalar('SELECT COUNT(*) FROM class_observations WHERE is_demo = ?', [$scope], 0);
+        $observations = (int) Database::scalar('SELECT COUNT(*) FROM class_observations co JOIN users i ON i.id = co.instructor_id WHERE co.is_demo = ?' . ($departmentId !== null ? ' AND i.department_id = ?' : ''), $departmentId !== null ? [$scope, $departmentId] : [$scope], 0);
         $surveys = (int) Database::scalar('SELECT COUNT(*) FROM surveys WHERE is_demo = ? AND is_template = 0 AND status <> "archived"', [$scope], 0);
-        $assignments = (int) Database::scalar('SELECT COUNT(*) FROM evaluation_assignments WHERE is_demo = ?', [$scope], 0);
+        $assignments = (int) Database::scalar(
+            'SELECT COUNT(*) FROM evaluation_assignments a JOIN users i ON i.id = a.instructor_id WHERE a.is_demo = ?' . ($departmentId !== null ? ' AND i.department_id = ?' : ''),
+            $departmentId !== null ? [$scope, $departmentId] : [$scope],
+            0
+        );
 
         $recentActivities = Database::fetchAll(
             'SELECT a.*, u.first_name, u.last_name, u.username FROM audit_logs a
-             LEFT JOIN users u ON u.id = a.user_id ORDER BY a.created_at DESC LIMIT 8'
+             LEFT JOIN users u ON u.id = a.user_id' . ($departmentId !== null ? ' WHERE u.department_id = ?' : '') . ' ORDER BY a.created_at DESC LIMIT 8',
+            $departmentId !== null ? [$departmentId] : []
         );
 
         return [

@@ -20,6 +20,15 @@ final class ReportController extends BaseController
             : $options['instructors'];
         $types = ReportService::typesFor($base === 'instructor');
 
+        // Department scope: Dean/Academic Head can only see their department's data.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null) {
+            $options['instructors'] = array_values(array_filter(
+                $options['instructors'],
+                static fn (array $inst): bool => (int) ($inst['department_id'] ?? 0) === $deptId
+            ));
+        }
+
         $this->view($base . '/reports/index', [
             'pageTitle' => 'Reports',
             'types' => $types,
@@ -96,7 +105,7 @@ final class ReportController extends BaseController
 
     private function filters(): array
     {
-        return [
+        $filters = [
             'academic_year_id' => $this->intInput('academic_year_id') ?: null,
             'semester_id' => $this->intInput('semester_id') ?: null,
             'department_id' => $this->intInput('department_id') ?: null,
@@ -109,6 +118,12 @@ final class ReportController extends BaseController
             'date_from' => $this->postString('date_from') ?: null,
             'date_to' => $this->postString('date_to') ?: null,
         ];
+        // Department scope: force department_id when scoped.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null) {
+            $filters['department_id'] = $deptId;
+        }
+        return $filters;
     }
 
     private function filterQuery(string $type, array $filters): string

@@ -12,12 +12,13 @@ final class PredictionController extends BaseController
     public function index(): void
     {
         $service = new PredictionService();
-        $instructors = (new User())->instructors($this->demo(), false);
+        $deptId = $this->scopeDepartmentId();
+        $instructors = (new User())->instructors($this->demo(), false, $deptId);
 
         $this->view('dean/predictions/index', [
             'pageTitle' => 'Predictive Analytics',
             'config' => $service->config(),
-            'predictions' => $service->allLatest($this->demo()),
+            'predictions' => $service->allLatest($this->demo(), $deptId),
             'instructors' => $instructors,
             'demo' => $this->demo(),
         ]);
@@ -30,10 +31,11 @@ final class PredictionController extends BaseController
         $instructorId = $this->intInput('instructor_id');
 
         if ($instructorId > 0) {
+            $deptId = $this->scopeDepartmentId();
             $instructor = Database::fetch(
                 'SELECT u.id, u.first_name, u.last_name FROM users u JOIN roles r ON r.id = u.role_id
-                 WHERE u.id = ? AND r.slug = "instructor" AND u.is_demo = ?',
-                [$instructorId, $this->demo() ? 1 : 0]
+                 WHERE u.id = ? AND r.slug = "instructor" AND u.is_demo = ?' . ($deptId !== null ? ' AND u.department_id = ?' : ''),
+                $deptId !== null ? [$instructorId, $this->demo() ? 1 : 0, $deptId] : [$instructorId, $this->demo() ? 1 : 0]
             );
             if (!$instructor) {
                 $this->backWithError('Instructor not found in the active data scope.', 'dean/predictions');
@@ -47,8 +49,8 @@ final class PredictionController extends BaseController
             $this->success($message, 'dean/predictions');
         }
 
-        $results = $service->generateForAll($this->demo());
-        $created = (new RecommendationService())->generateAll($this->demo());
+        $results = $service->generateForAll($this->demo(), $deptId);
+        $created = (new RecommendationService())->generateAll($this->demo(), $deptId);
         $this->audit('prediction.generate_all', 'prediction', null, 'Generated prediction indicators for ' . count($results) . ' instructor(s)');
         $this->success(count($results) . ' instructor prediction indicator(s) refreshed. ' . $created . ' new recommendation(s) created.', 'dean/predictions');
     }

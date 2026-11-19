@@ -9,18 +9,23 @@ use App\Core\Database;
  */
 final class Academic
 {
-    public function departments(bool $demo = false, bool $activeOnly = false): array
+    public function departments(bool $demo = false, bool $activeOnly = false, ?int $departmentId = null): array
     {
         $sql = 'SELECT d.*, u.first_name, u.last_name,
                   (SELECT COUNT(*) FROM programs p WHERE p.department_id = d.id) AS program_count
                 FROM departments d
                 LEFT JOIN users u ON u.id = d.head_user_id
                 WHERE d.is_demo = ?';
+        $params = [$demo ? 1 : 0];
+        if ($departmentId !== null) {
+            $sql .= ' AND d.id = ?';
+            $params[] = $departmentId;
+        }
         if ($activeOnly) {
             $sql .= " AND d.status = 'active'";
         }
         $sql .= ' ORDER BY d.name';
-        return Database::fetchAll($sql, [$demo ? 1 : 0]);
+        return Database::fetchAll($sql, $params);
     }
 
     public function programs(bool $demo = false, ?int $departmentId = null, bool $activeOnly = false): array
@@ -180,9 +185,16 @@ final class Academic
         return Database::fetchAll($sql, $params);
     }
 
-    public function departmentOptions(bool $demo): array
+    public function departmentOptions(bool $demo, ?int $departmentId = null): array
     {
-        return Database::fetchAll('SELECT id, code, name FROM departments WHERE is_demo = ? ORDER BY name', [$demo ? 1 : 0]);
+        $sql = 'SELECT id, code, name FROM departments WHERE is_demo = ?';
+        $params = [$demo ? 1 : 0];
+        if ($departmentId !== null) {
+            $sql .= ' AND id = ?';
+            $params[] = $departmentId;
+        }
+        $sql .= ' ORDER BY name';
+        return Database::fetchAll($sql, $params);
     }
 
     public function programOptions(bool $demo): array

@@ -82,11 +82,17 @@ final class RecommendationService
         return $created;
     }
 
-    public function generateAll(bool $demo): int
+    public function generateAll(bool $demo, ?int $departmentId = null): int
     {
+        $where = 'r.slug = "instructor" AND u.is_demo = ? AND u.status = "active"';
+        $params = [$demo ? 1 : 0];
+        if ($departmentId !== null) {
+            $where .= ' AND u.department_id = ?';
+            $params[] = $departmentId;
+        }
         $instructors = Database::fetchAll(
-            'SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.slug = "instructor" AND u.is_demo = ? AND u.status = "active"',
-            [$demo ? 1 : 0]
+            'SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE ' . $where,
+            $params
         );
         $created = 0;
         foreach ($instructors as $instructor) {
@@ -103,7 +109,7 @@ final class RecommendationService
         );
     }
 
-    public function all(bool $demo, string $status = ''): array
+    public function all(bool $demo, string $status = '', ?int $departmentId = null): array
     {
         $sql = 'SELECT ir.*, u.first_name, u.last_name, d.code AS department_code
                 FROM instructor_recommendations ir
@@ -111,6 +117,10 @@ final class RecommendationService
                 LEFT JOIN departments d ON d.id = u.department_id
                 WHERE u.is_demo = ?';
         $params = [$demo ? 1 : 0];
+        if ($departmentId !== null) {
+            $sql .= ' AND u.department_id = ?';
+            $params[] = $departmentId;
+        }
         if ($status !== '') {
             $sql .= ' AND ir.status = ?';
             $params[] = $status;

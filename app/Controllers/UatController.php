@@ -21,9 +21,10 @@ final class UatController extends BaseController
 
     public function index(): void
     {
+        $deptId = $this->scopeDepartmentId();
         $this->view('dean/uat/index', [
             'pageTitle' => 'User Acceptance Testing',
-            'surveys' => $this->uat->surveys($this->demo()),
+            'surveys' => $this->uat->surveys($this->demo(), $deptId),
             'references' => $this->uat->referenceResults(),
             'demo' => $this->demo(),
         ]);

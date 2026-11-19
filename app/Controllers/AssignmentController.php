@@ -29,11 +29,16 @@ final class AssignmentController extends BaseController
             'status' => $this->input('status', ''),
             'instructor_id' => $this->input('instructor_id', ''),
         ];
+        // Department scope: Dean/Academic Head can only see their department's assignments.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null) {
+            $filters['department_id'] = $deptId;
+        }
         $this->view('dean/assignments/index', [
             'pageTitle' => 'Evaluation Assignments',
             'assignments' => $this->evaluations->assignmentListing($this->demo(), $filters),
             'filters' => $filters,
-            'instructors' => $this->users->instructors($this->demo(), false),
+            'instructors' => $this->users->instructors($this->demo(), false, $deptId),
             'demo' => $this->demo(),
         ]);
     }
@@ -121,6 +126,7 @@ final class AssignmentController extends BaseController
     private function formData(?array $assignment): array
     {
         $demo = $assignment ? (int) $assignment['is_demo'] === 1 : $this->demo();
+        $deptId = $this->scopeDepartmentId();
         $versions = Database::fetchAll(
             'SELECT v.id, v.version_number, s.title, s.category FROM survey_versions v
              JOIN surveys s ON s.id = v.survey_id
@@ -132,8 +138,8 @@ final class AssignmentController extends BaseController
             'pageTitle' => $assignment ? 'Edit Evaluation Assignment' : 'New Evaluation Assignment',
             'assignment' => $assignment,
             'versions' => $versions,
-            'instructors' => $this->users->instructors($demo, true),
-            'courses' => $this->academic->courses($demo, null, null, true),
+            'instructors' => $this->users->instructors($demo, true, $deptId),
+            'courses' => $this->academic->courses($demo, $deptId, null, true),
             'sections' => $this->academic->sections($demo, null, true),
             'years' => $this->academic->academicYears(),
             'semesters' => $this->academic->semesters(),
@@ -170,6 +176,19 @@ final class AssignmentController extends BaseController
         }
         if ($data['instructor_id'] <= 0 || !$this->users->findWithRelations($data['instructor_id'])) {
             $this->backWithError('Choose a valid instructor.', $back);
+        }
+        // Department scope: instructor must belong to the Dean's department.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null) {
+            $instructor = $this->users->findWithRelations($data['instructor_id']);
+            if (!$instructor || (int) ($instructor['department_id'] ?? 0) !== $deptId) {
+                $this->backWithError('You can only assign instructors from your own department.', $back);
+            }
+            // Course must belong to the Dean's department.
+            $course = Database::fetch('SELECT department_id FROM courses WHERE id = ? LIMIT 1', [$data['course_id']]);
+            if (!$course || (int) ($course['department_id'] ?? 0) !== $deptId) {
+                $this->backWithError('You can only assign courses from your own department.', $back);
+            }
         }
         $opens = strtotime($data['opens_at']);
         $closes = strtotime($data['closes_at']);

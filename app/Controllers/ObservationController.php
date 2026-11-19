@@ -27,6 +27,12 @@ final class ObservationController extends BaseController
         ];
         $where = ['o.is_demo = ?'];
         $params = [$this->demo() ? 1 : 0];
+        // Department scope: Dean/Academic Head can only see their department's observations.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null) {
+            $where[] = 'i.department_id = ?';
+            $params[] = $deptId;
+        }
         if ($filters['status'] !== '') {
             $where[] = 'o.status = ?';
             $params[] = $filters['status'];
@@ -168,17 +174,21 @@ final class ObservationController extends BaseController
     private function formData(?array $observation): array
     {
         $demo = $observation ? (int) $observation['is_demo'] === 1 : $this->demo();
+        $deptId = $this->scopeDepartmentId();
         return [
             'pageTitle' => $observation ? 'Edit Class Observation' : 'New Class Observation',
             'observation' => $observation,
-            'instructors' => $this->users->instructors($demo, true),
-            'courses' => $this->academic->courses($demo, null, null, true),
+            'instructors' => $this->users->instructors($demo, true, $deptId),
+            'courses' => $this->academic->courses($demo, $deptId, null, true),
             'sections' => $this->academic->sections($demo, null, true),
             'years' => $this->academic->academicYears(),
             'semesters' => $this->academic->semesters(),
             'assignments' => Database::fetchAll(
-                'SELECT a.id, a.title FROM evaluation_assignments a WHERE a.is_demo = ? ORDER BY a.opens_at DESC',
-                [$demo ? 1 : 0]
+                'SELECT a.id, a.title FROM evaluation_assignments a
+                 JOIN users i ON i.id = a.instructor_id
+                 WHERE a.is_demo = ?' . ($deptId !== null ? ' AND i.department_id = ?' : '') . '
+                 ORDER BY a.opens_at DESC',
+                $deptId !== null ? [$demo ? 1 : 0, $deptId] : [$demo ? 1 : 0]
             ),
             'demo' => $demo,
         ];
@@ -204,6 +214,18 @@ final class ObservationController extends BaseController
         $back = $this->postString('_return', 'dean/observations/create');
         if ($data['instructor_id'] <= 0 || $data['course_id'] <= 0 || $data['section_id'] <= 0) {
             $this->backWithError('Choose the instructor, course and section being observed.', $back);
+        }
+        // Department scope: instructor/course must belong to the Dean's department.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null) {
+            $instructor = $this->users->findWithRelations($data['instructor_id']);
+            if (!$instructor || (int) ($instructor['department_id'] ?? 0) !== $deptId) {
+                $this->backWithError('You can only observe instructors from your own department.', $back);
+            }
+            $course = Database::fetch('SELECT department_id FROM courses WHERE id = ? LIMIT 1', [$data['course_id']]);
+            if (!$course || (int) ($course['department_id'] ?? 0) !== $deptId) {
+                $this->backWithError('You can only observe courses from your own department.', $back);
+            }
         }
         if (!$data['observation_date'] || !strtotime($data['observation_date'])) {
             $this->backWithError('Enter a valid observation date.', $back);

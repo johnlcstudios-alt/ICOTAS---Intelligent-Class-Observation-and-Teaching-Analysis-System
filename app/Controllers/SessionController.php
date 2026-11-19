@@ -26,11 +26,16 @@ final class SessionController extends BaseController
             'status' => $this->input('status', ''),
             'assignment_id' => $this->input('assignment_id', ''),
         ];
+        // Department scope: Dean/Academic Head can only see their department's sessions.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null) {
+            $filters['department_id'] = $deptId;
+        }
         $this->view('dean/sessions/index', [
             'pageTitle' => 'QR Evaluation Sessions',
             'sessions' => $this->evaluations->sessions($this->demo(), $filters),
             'filters' => $filters,
-            'assignments' => $this->evaluations->assignmentOptions($this->demo()),
+            'assignments' => $this->evaluations->assignmentOptions($this->demo(), $deptId),
             'demo' => $this->demo(),
         ]);
     }
@@ -38,9 +43,10 @@ final class SessionController extends BaseController
     public function create(): void
     {
         $preselect = $this->intInput('assignment_id');
+        $deptId = $this->scopeDepartmentId();
         $this->view('dean/sessions/create', [
             'pageTitle' => 'Open QR Session',
-            'assignments' => $this->evaluations->assignmentOptions($this->demo()),
+            'assignments' => $this->evaluations->assignmentOptions($this->demo(), $deptId),
             'preselect' => $preselect,
             'demo' => $this->demo(),
         ]);
@@ -52,6 +58,19 @@ final class SessionController extends BaseController
         $assignmentId = $this->intInput('assignment_id');
         $opensAt = $this->postString('opens_at');
         $expiresAt = $this->postString('expires_at');
+        // Department scope: Dean/Academic Head can only create sessions for their department's assignments.
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null) {
+            $assignment = Database::fetch(
+                'SELECT a.id, i.department_id FROM evaluation_assignments a
+                 JOIN users i ON i.id = a.instructor_id
+                 WHERE a.id = ? LIMIT 1',
+                [$assignmentId]
+            );
+            if (!$assignment || (int) ($assignment['department_id'] ?? 0) !== $deptId) {
+                $this->backWithError('You can only create sessions for assignments in your own department.', 'dean/sessions/create');
+            }
+        }
         $result = $this->qr->createSession($assignmentId, $opensAt, $expiresAt, (int) Auth::id(), $this->demo());
         if (!$result[0]) {
             $this->backWithError($result[1], 'dean/sessions/create');

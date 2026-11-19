@@ -24,6 +24,10 @@ final class Evaluation extends Model
             $where[] = 'a.status = ?';
             $params[] = $filters['status'];
         }
+        if (!empty($filters['department_id'])) {
+            $where[] = 'i.department_id = ?';
+            $params[] = (int) $filters['department_id'];
+        }
         if (!empty($filters['search'])) {
             $where[] = '(a.title LIKE ? OR c.code LIKE ? OR sec.code LIKE ? OR i.last_name LIKE ?)';
             $like = '%' . $filters['search'] . '%';
@@ -87,6 +91,10 @@ final class Evaluation extends Model
         if (!empty($filters['status'])) {
             $where[] = 'es.status = ?';
             $params[] = $filters['status'];
+        }
+        if (!empty($filters['department_id'])) {
+            $where[] = 'i.department_id = ?';
+            $params[] = (int) $filters['department_id'];
         }
         if (!empty($filters['search'])) {
             $where[] = '(es.session_code LIKE ? OR a.title LIKE ? OR c.code LIKE ? OR sec.code LIKE ? OR i.last_name LIKE ?)';
@@ -307,15 +315,25 @@ final class Evaluation extends Model
         return $this->sessions($demo, ['instructor_id' => $instructorId]);
     }
 
-    public function assignmentOptions(bool $demo): array
+    public function assignmentOptions(bool $demo, ?int $departmentId = null): array
     {
-        return Database::fetchAll(
-            'SELECT a.id, a.title, a.instructor_id, c.code AS course_code, sec.code AS section_code
-             FROM evaluation_assignments a
-             JOIN courses c ON c.id = a.course_id
-             JOIN sections sec ON sec.id = a.section_id
-             WHERE a.is_demo = ? ORDER BY a.opens_at DESC',
-            [$demo ? 1 : 0]
-        );
+        $params = [$demo ? 1 : 0];
+        if ($departmentId !== null) {
+            $sql = 'SELECT a.id, a.title, a.instructor_id, c.code AS course_code, sec.code AS section_code
+                     FROM evaluation_assignments a
+                     JOIN courses c ON c.id = a.course_id
+                     JOIN sections sec ON sec.id = a.section_id
+                     JOIN users i ON i.id = a.instructor_id AND i.department_id = ?
+                     WHERE a.is_demo = ? ORDER BY a.opens_at DESC';
+            $params[] = $departmentId;
+        } else {
+            $sql = 'SELECT a.id, a.title, a.instructor_id, c.code AS course_code, sec.code AS section_code
+                     FROM evaluation_assignments a
+                     JOIN courses c ON c.id = a.course_id
+                     JOIN sections sec ON sec.id = a.section_id
+                     JOIN users i ON i.id = a.instructor_id
+                     WHERE a.is_demo = ? ORDER BY a.opens_at DESC';
+        }
+        return Database::fetchAll($sql, $params);
     }
 }

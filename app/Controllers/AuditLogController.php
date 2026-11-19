@@ -15,6 +15,10 @@ final class AuditLogController extends BaseController
             'from' => $this->input('from', ''),
             'to' => $this->input('to', ''),
         ];
+        $deptId = $this->scopeDepartmentId();
+        if ($deptId !== null) {
+            $filters['department_id'] = $deptId;
+        }
         $pagination = (new AuditLog())->paginate($filters, $this->page(), 30);
         $this->view('dean/audit/index', [
             'pageTitle' => 'Audit Logs',

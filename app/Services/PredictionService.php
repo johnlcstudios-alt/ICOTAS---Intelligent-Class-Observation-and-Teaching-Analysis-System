@@ -192,12 +192,18 @@ final class PredictionService
         return $row;
     }
 
-    public function generateForAll(bool $demo): array
+    public function generateForAll(bool $demo, ?int $departmentId = null): array
     {
+        $where = 'r.slug = "instructor" AND u.is_demo = ? AND u.status = "active"';
+        $params = [$demo ? 1 : 0];
+        if ($departmentId !== null) {
+            $where .= ' AND u.department_id = ?';
+            $params[] = $departmentId;
+        }
         $instructors = Database::fetchAll(
             'SELECT u.id, u.first_name, u.last_name FROM users u JOIN roles r ON r.id = u.role_id
-             WHERE r.slug = "instructor" AND u.is_demo = ? AND u.status = "active" ORDER BY u.last_name',
-            [$demo ? 1 : 0]
+             WHERE ' . $where . ' ORDER BY u.last_name',
+            $params
         );
         $results = [];
         foreach ($instructors as $instructor) {
@@ -208,8 +214,14 @@ final class PredictionService
         return $results;
     }
 
-    public function allLatest(bool $demo): array
+    public function allLatest(bool $demo, ?int $departmentId = null): array
     {
+        $where = 'u.is_demo = ?';
+        $params = [$demo ? 1 : 0];
+        if ($departmentId !== null) {
+            $where .= ' AND u.department_id = ?';
+            $params[] = $departmentId;
+        }
         return Database::fetchAll(
             'SELECT pr.*, u.first_name, u.last_name,
                     (SELECT MAX(generated_at) FROM prediction_results p2 WHERE p2.instructor_id = pr.instructor_id) AS latest_at
@@ -219,9 +231,9 @@ final class PredictionService
                  SELECT p3.id FROM prediction_results p3
                  WHERE p3.instructor_id = pr.instructor_id
                  ORDER BY p3.generated_at DESC, p3.id DESC LIMIT 1
-             ) AND u.is_demo = ?
+             ) AND ' . $where . '
              ORDER BY FIELD(pr.risk_level, "needs_attention", "improving", "stable", "insufficient_data"), pr.current_average DESC',
-            [$demo ? 1 : 0]
+            $params
         );
     }
 
