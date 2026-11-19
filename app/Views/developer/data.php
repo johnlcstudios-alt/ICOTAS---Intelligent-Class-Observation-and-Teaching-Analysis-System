@@ -1,10 +1,12 @@
 <?php
 /**
- * @var string $developerKey
+ * @var string|null $developerKey
+ * @var string|null $consoleBase
  * @var array $tables
  * @var array $stats
  */
-$console = static fn (string $path = ''): string => url('developer/' . rawurlencode($developerKey) . ($path !== '' ? '/' . ltrim($path, '/') : ''));
+$consoleBase = $consoleBase ?? ('developer/' . rawurlencode((string) ($developerKey ?? '')));
+$console = static fn (string $path = ''): string => url($consoleBase . ($path !== '' ? '/' . ltrim($path, '/') : ''));
 $formatBytes = static function (int $bytes): string {
     if ($bytes <= 0) {
         return '0 B';

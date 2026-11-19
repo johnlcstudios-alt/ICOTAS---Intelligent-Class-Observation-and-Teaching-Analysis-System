@@ -16,7 +16,6 @@ $demo = Setting::demoMode();
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="csrf-token" content="<?= e(csrf_token()) ?>">
     <meta name="theme-color" content="#144a9c">
     <title><?= e($pageTitle ?? 'ICOTAS') ?> · <?= e(setting('system_name', 'ICOTAS')) ?></title>
     <link rel="stylesheet" href="<?= asset('vendor/bootstrap.min.css') ?>">
@@ -71,6 +70,10 @@ $demo = Setting::demoMode();
                 <a class="nav-link <?= active_nav('dean/audit-logs') ?>" href="<?= url('dean/audit-logs') ?>"><i class="bi bi-shield-check"></i> Audit Logs</a>
                 <a class="nav-link <?= active_nav('dean/settings') ?>" href="<?= url('dean/settings') ?>"><i class="bi bi-gear"></i> Settings</a>
                 <a class="nav-link <?= active_nav('dean/demo') ?>" href="<?= url('dean/demo') ?>"><i class="bi bi-database-gear"></i> Demo Data</a>
+                <?php if (Auth::isDeveloper()): ?>
+                <span class="nav-label">System</span>
+                <a class="nav-link <?= active_nav('developer') ?>" href="<?= url('developer') ?>"><i class="bi bi-pc-display"></i> Developer Console</a>
+                <?php endif; ?>
             <?php elseif ($role === 'instructor'): ?>
                 <span class="nav-label">My Teaching</span>
                 <a class="nav-link <?= active_nav('instructor/dashboard') ?>" href="<?= url('instructor/dashboard') ?>"><i class="bi bi-speedometer2"></i> Dashboard</a>

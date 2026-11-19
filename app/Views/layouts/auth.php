@@ -7,7 +7,6 @@ $user = App\Core\Auth::user();
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="csrf-token" content="<?= e(csrf_token()) ?>">
     <meta name="theme-color" content="#144a9c">
     <title><?= e($pageTitle ?? 'Sign in') ?> · <?= e(setting('system_name', 'ICOTAS')) ?></title>
     <link rel="stylesheet" href="<?= asset('vendor/bootstrap.min.css') ?>">

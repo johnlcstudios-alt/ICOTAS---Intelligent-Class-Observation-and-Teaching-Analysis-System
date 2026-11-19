@@ -1,11 +1,13 @@
 <?php
 /**
- * @var string $developerKey
+ * @var string|null $developerKey
+ * @var string|null $consoleBase
  * @var array|null $result
  * @var string $sqlText
  * @var array $tables
  */
-$console = static fn (string $path = ''): string => url('developer/' . rawurlencode($developerKey) . ($path !== '' ? '/' . ltrim($path, '/') : ''));
+$consoleBase = $consoleBase ?? ('developer/' . rawurlencode((string) ($developerKey ?? '')));
+$console = static fn (string $path = ''): string => url($consoleBase . ($path !== '' ? '/' . ltrim($path, '/') : ''));
 $cells = static function ($value): string {
     if ($value === null) {
         return '<span class="text-muted">NULL</span>';

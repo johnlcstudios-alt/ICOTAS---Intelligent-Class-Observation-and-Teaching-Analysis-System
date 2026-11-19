@@ -60,7 +60,6 @@ final class Auth
         $_SESSION['auth_role'] = $user['role'];
         $_SESSION['auth_boot'] = time();
         $_SESSION['_last_activity'] = time();
-        Csrf::rotate();
 
         // The request that submitted the form may have already cached the
         // guest state (for example, the guest middleware calls Auth::check()).
@@ -172,6 +171,16 @@ final class Auth
     public static function requireAdmin(): void
     {
         self::requireRole(['dean', 'academic_head']);
+    }
+
+    public static function isDeveloper(): bool
+    {
+        return self::role() === 'developer';
+    }
+
+    public static function requireDeveloper(): void
+    {
+        self::requireRole(['developer']);
     }
 
     public static function requireDean(): void

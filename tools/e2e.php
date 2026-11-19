@@ -158,9 +158,7 @@ final class Http
 
     public function login(string $login, string $password = 'Demo@12345'): array
     {
-        $token = $this->csrf('/login');
         return $this->post('/login', [
-            '_token' => $token,
             'login' => $login,
             'password' => $password,
         ], true);
@@ -495,17 +493,18 @@ $newLogin = $newStudentSession->login($username, $password);
 check($newLogin['status'] === 200, 'self-registered student can sign in', (string) $newLogin['status']);
 check(str_contains($newLogin['body'], 'My Evaluation Portal'), 'self-registered student reaches the student portal');
 
-$csrfRejected = (new Http($base))->post('/signup', [
+$noToken = (new Http($base))->post('/signup', [
     'first_name' => 'No',
     'last_name' => 'Token',
-    'username' => 'e2e.nocsrf.' . $suffix,
-    'email' => 'e2e.nocsrf.' . $suffix . '@example.test',
-    'student_number' => 'NOCSRF-' . $suffix,
+    'username' => 'e2e.nocheck.' . $suffix,
+    'email' => 'e2e.nocheck.' . $suffix . '@example.test',
+    'student_number' => 'NOCHECK-' . $suffix,
     'password' => $password,
     'password_confirmation' => $password,
     'accept_terms' => '1',
 ]);
-check($csrfRejected['status'] === 419, 'registration requires a valid CSRF token', (string) $csrfRejected['status']);
+check($noToken['status'] !== 419, 'no CSRF rejection without token (CSRF disabled)');
+Database::execute('DELETE FROM users WHERE username = ?', ['e2e.nocheck.' . $suffix]);
 
 Database::execute('UPDATE system_settings SET setting_value = "0" WHERE setting_key = "allow_student_signup"');
 $closedClient = new Http($base);

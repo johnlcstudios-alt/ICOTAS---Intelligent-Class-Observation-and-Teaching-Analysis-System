@@ -52,7 +52,6 @@ final class AccountController extends BaseController
         // End every other session, then keep this browser signed in.
         Database::execute('DELETE FROM user_sessions WHERE user_id = ?', [$id]);
         Session::regenerate();
-        Csrf::rotate();
         Database::execute(
             'INSERT INTO user_sessions (user_id, session_hash, ip_hash, user_agent, last_activity)
              VALUES (?, ?, ?, ?, NOW())

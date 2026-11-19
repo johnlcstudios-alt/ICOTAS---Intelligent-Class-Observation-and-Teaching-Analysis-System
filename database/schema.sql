@@ -755,6 +755,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 INSERT INTO roles (slug, name, description) VALUES
   ('dean', 'Dean', 'College-wide administration, governance and evaluation management'),
   ('academic_head', 'Academic Head', 'Department-level administration and evaluation management'),
+  ('developer', 'Developer', 'Full system access: manage users, data, settings, audit logs, and demonstration data'),
   ('instructor', 'Instructor', 'Private personal teaching performance and evaluation access'),
   ('student', 'Student', 'Eligible student evaluation respondent')
 ON DUPLICATE KEY UPDATE name = VALUES(name), description = VALUES(description);
@@ -784,6 +785,7 @@ INSERT INTO system_settings (setting_key, setting_value, setting_group) VALUES
   ('uat_poor_min', '1.50', 'uat'),
   ('allow_student_self_scan', '1', 'evaluation'),
   ('allow_student_signup', '1', 'evaluation'),
+  ('allow_dean_signup', '1', 'evaluation'),
   ('default_session_minutes', '120', 'evaluation')
 ON DUPLICATE KEY UPDATE setting_key = VALUES(setting_key);
 

@@ -1,6 +1,7 @@
 <?php
 /**
- * @var string $developerKey
+ * @var string|null $developerKey
+ * @var string|null $consoleBase
  * @var string $table
  * @var array|null $row
  * @var array $columns
@@ -8,7 +9,8 @@
  * @var string|null $primaryKey
  */
 $isEdit = $row !== null;
-$console = static fn (string $path = ''): string => url('developer/' . rawurlencode($developerKey) . ($path !== '' ? '/' . ltrim($path, '/') : ''));
+$consoleBase = $consoleBase ?? ('developer/' . rawurlencode((string) ($developerKey ?? '')));
+$console = static fn (string $path = ''): string => url($consoleBase . ($path !== '' ? '/' . ltrim($path, '/') : ''));
 $tableUrl = $console('data/' . rawurlencode($table));
 $rowId = $isEdit && $primaryKey !== null ? ($row[$primaryKey] ?? null) : null;
 $action = $isEdit && $rowId !== null

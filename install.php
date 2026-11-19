@@ -200,11 +200,6 @@ foreach ($requirements as $requirement) {
 }
 
 if (!$locked && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-    $token = isset($_POST['csrf_token']) && is_string($_POST['csrf_token']) ? $_POST['csrf_token'] : '';
-    if (empty($_SESSION['installer_csrf']) || !hash_equals((string) $_SESSION['installer_csrf'], $token)) {
-        $errors[] = 'Your installer session expired. Refresh the page and submit the form again.';
-    }
-
     $host = $form['db_host'];
     $port = (int) $form['db_port'];
     $database = $form['db_name'];
@@ -393,17 +388,11 @@ if (!$locked && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             }
             $installed = true;
             $developerKey = (string) $localConfig['app']['developer_key'];
-            $_SESSION['installer_csrf'] = bin2hex(random_bytes(32));
         } catch (Throwable $installError) {
             $errors[] = $installError->getMessage();
         }
     }
 }
-
-if (empty($_SESSION['installer_csrf'])) {
-    $_SESSION['installer_csrf'] = bin2hex(random_bytes(32));
-}
-$csrf = (string) $_SESSION['installer_csrf'];
 ?>
 <!doctype html>
 <html lang="en">
@@ -548,7 +537,6 @@ $csrf = (string) $_SESSION['installer_csrf'];
                     <?php endif; ?>
 
                     <form method="post" action="install.php" autocomplete="off">
-                        <input type="hidden" name="csrf_token" value="<?= h($csrf) ?>">
 
                         <div class="section-title">Database</div>
                         <div class="row-3">

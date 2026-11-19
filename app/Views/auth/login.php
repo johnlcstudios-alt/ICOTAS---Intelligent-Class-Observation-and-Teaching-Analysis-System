@@ -55,6 +55,14 @@ $demoMode = Setting::demoMode();
         <i class="bi bi-person-plus"></i> New student? <a href="<?= url('signup') ?>">Create an account</a>
     </p>
 <?php endif; ?>
+<?php if (!empty($deanSignupEnabled)): ?>
+    <div class="mt-4">
+        <a class="btn btn-outline-primary w-100 py-2 mb-2" href="<?= url('dean-signup') ?>">
+            <i class="bi bi-shield-lock"></i> Create a Dean account
+        </a>
+        <p class="text-center text-muted small">Dean accounts have college-wide administrative access.</p>
+    </div>
+<?php endif; ?>
 <p class="text-center text-muted small mt-3 mb-0">
     Instructor and staff accounts are issued by the Dean or Academic Head.
 </p>

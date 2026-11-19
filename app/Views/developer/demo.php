@@ -1,11 +1,13 @@
 <?php
 /**
- * @var string $developerKey
+ * @var string|null $developerKey
+ * @var string|null $consoleBase
  * @var array $counts
  * @var bool $demoMode
  * @var bool $hasDemoAccounts
  */
-$console = static fn (string $path = ''): string => url('developer/' . rawurlencode($developerKey) . ($path !== '' ? '/' . ltrim($path, '/') : ''));
+$consoleBase = $consoleBase ?? ('developer/' . rawurlencode((string) ($developerKey ?? '')));
+$console = static fn (string $path = ''): string => url($consoleBase . ($path !== '' ? '/' . ltrim($path, '/') : ''));
 $labels = [
     'departments' => ['label' => 'Departments', 'icon' => 'bi-building'],
     'programs' => ['label' => 'Programs', 'icon' => 'bi-diagram-3'],

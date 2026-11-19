@@ -54,13 +54,6 @@ final class Router
                 continue;
             }
 
-            if (Request::isStateChanging() && !Csrf::validate()) {
-                if (Request::wantsJson()) {
-                    json_response(['success' => false, 'message' => 'Your security token expired. Refresh and try again.'], 419);
-                }
-                abort(419, 'Your security token expired. Refresh the page and try again.');
-            }
-
             $this->runMiddleware($route['middleware']);
 
             $params = [];

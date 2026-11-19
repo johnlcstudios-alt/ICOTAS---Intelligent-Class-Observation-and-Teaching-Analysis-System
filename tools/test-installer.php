@@ -52,13 +52,11 @@ try {
         session_name('icotas_installer');
         session_start();
     }
-    $_SESSION['installer_csrf'] = 'installer-test-token';
 
     $_SERVER['REQUEST_METHOD'] = 'POST';
     $_SERVER['SERVER_PORT'] = '80';
     $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
     $_POST = [
-        'csrf_token' => 'installer-test-token',
         'db_host' => '127.0.0.1',
         'db_port' => '3306',
         'db_name' => $database,

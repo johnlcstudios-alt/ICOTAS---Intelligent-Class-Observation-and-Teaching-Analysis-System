@@ -228,6 +228,13 @@ if (!function_exists('is_student')) {
     }
 }
 
+if (!function_exists('is_developer')) {
+    function is_developer(): bool
+    {
+        return Auth::isDeveloper();
+    }
+}
+
 if (!function_exists('setting')) {
     function setting(string $key, $default = null)
     {

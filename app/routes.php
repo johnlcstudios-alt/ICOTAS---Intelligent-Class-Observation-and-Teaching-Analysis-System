@@ -40,43 +40,48 @@ $router->get('/login', [AuthController::class, 'showLogin'], ['guest']);
 $router->post('/login', [AuthController::class, 'login'], ['guest']);
 $router->get('/signup', [AuthController::class, 'showSignup'], ['guest']);
 $router->post('/signup', [AuthController::class, 'signup'], ['guest']);
+$router->get('/dean-signup', [AuthController::class, 'showDeanSignup'], ['guest']);
+$router->post('/dean-signup', [AuthController::class, 'deanSignup'], ['guest']);
 $router->get('/account/password', [AccountController::class, 'show'], ['auth']);
 $router->post('/account/password', [AccountController::class, 'update'], ['auth']);
 $router->post('/logout', [AuthController::class, 'logout'], ['auth']);
 
-/* Unlinked developer console. The secret key is the only credential; no
- * navigation entry points to these routes. It intentionally sits outside the
- * user RBAC model and can manage every record in the installation. */
-$router->get('/developer/{key}', [DeveloperController::class, 'index']);
+/* ---------------------------------------------------------------------------
+ * Role-based developer console. Accessible by users with the 'developer'
+ * role through normal sign-in. Provides full system management: users,
+ * raw data, settings, audit log, SQL console, and demonstration data.
+ * ------------------------------------------------------------------------ */
+$router->get('/developer', [DeveloperController::class, 'developerDashboard'], ['auth', 'role:developer']);
+$router->get('/developer/users', [DeveloperController::class, 'developerUsers'], ['auth', 'role:developer']);
+$router->get('/developer/users/create', [DeveloperController::class, 'developerCreateUser'], ['auth', 'role:developer']);
+$router->post('/developer/users', [DeveloperController::class, 'developerStoreUser'], ['auth', 'role:developer']);
+$router->get('/developer/users/{id}/edit', [DeveloperController::class, 'developerEditUser'], ['auth', 'role:developer']);
+$router->post('/developer/users/{id}', [DeveloperController::class, 'developerUpdateUser'], ['auth', 'role:developer']);
+$router->post('/developer/users/{id}/status', [DeveloperController::class, 'developerToggleUserStatus'], ['auth', 'role:developer']);
+$router->post('/developer/users/{id}/password', [DeveloperController::class, 'developerResetUserPassword'], ['auth', 'role:developer']);
+$router->post('/developer/users/{id}/delete', [DeveloperController::class, 'developerDeleteUser'], ['auth', 'role:developer']);
 
-$router->get('/developer/{key}/users', [DeveloperController::class, 'users']);
-$router->get('/developer/{key}/users/create', [DeveloperController::class, 'createUser']);
-$router->post('/developer/{key}/users', [DeveloperController::class, 'storeUser']);
-$router->get('/developer/{key}/users/{id}/edit', [DeveloperController::class, 'editUser']);
-$router->post('/developer/{key}/users/{id}', [DeveloperController::class, 'updateUser']);
-$router->post('/developer/{key}/users/{id}/status', [DeveloperController::class, 'toggleUserStatus']);
-$router->post('/developer/{key}/users/{id}/password', [DeveloperController::class, 'resetUserPassword']);
-$router->post('/developer/{key}/users/{id}/delete', [DeveloperController::class, 'deleteUser']);
+$router->get('/developer/data', [DeveloperController::class, 'developerData'], ['auth', 'role:developer']);
+$router->get('/developer/data/{table}', [DeveloperController::class, 'developerDataTable'], ['auth', 'role:developer']);
+$router->get('/developer/data/{table}/create', [DeveloperController::class, 'developerCreateRow'], ['auth', 'role:developer']);
+$router->post('/developer/data/{table}', [DeveloperController::class, 'developerStoreRow'], ['auth', 'role:developer']);
+$router->get('/developer/data/{table}/{id}/edit', [DeveloperController::class, 'developerEditRow'], ['auth', 'role:developer']);
+$router->post('/developer/data/{table}/{id}', [DeveloperController::class, 'developerUpdateRow'], ['auth', 'role:developer']);
+$router->post('/developer/data/{table}/{id}/delete', [DeveloperController::class, 'developerDeleteRow'], ['auth', 'role:developer']);
 
-$router->get('/developer/{key}/data', [DeveloperController::class, 'data']);
-$router->get('/developer/{key}/data/{table}/create', [DeveloperController::class, 'createRow']);
-$router->post('/developer/{key}/data/{table}', [DeveloperController::class, 'storeRow']);
-$router->get('/developer/{key}/data/{table}/{id}/edit', [DeveloperController::class, 'editRow']);
-$router->post('/developer/{key}/data/{table}/{id}', [DeveloperController::class, 'updateRow']);
-$router->post('/developer/{key}/data/{table}/{id}/delete', [DeveloperController::class, 'deleteRow']);
-$router->get('/developer/{key}/data/{table}', [DeveloperController::class, 'dataTable']);
+$router->get('/developer/settings', [DeveloperController::class, 'developerSettings'], ['auth', 'role:developer']);
+$router->post('/developer/settings', [DeveloperController::class, 'developerUpdateSettings'], ['auth', 'role:developer']);
+$router->post('/developer/settings/create', [DeveloperController::class, 'developerStoreSetting'], ['auth', 'role:developer']);
+$router->post('/developer/settings/{id}/delete', [DeveloperController::class, 'developerDeleteSetting'], ['auth', 'role:developer']);
 
-$router->get('/developer/{key}/settings', [DeveloperController::class, 'settings']);
-$router->post('/developer/{key}/settings', [DeveloperController::class, 'updateSettings']);
-$router->post('/developer/{key}/settings/create', [DeveloperController::class, 'storeSetting']);
-$router->post('/developer/{key}/settings/{id}/delete', [DeveloperController::class, 'deleteSetting']);
+$router->get('/developer/audit', [DeveloperController::class, 'developerAudit'], ['auth', 'role:developer']);
 
-$router->get('/developer/{key}/audit', [DeveloperController::class, 'auditLog']);
-$router->get('/developer/{key}/sql', [DeveloperController::class, 'sql']);
-$router->post('/developer/{key}/sql', [DeveloperController::class, 'runSql']);
-$router->get('/developer/{key}/demo', [DeveloperController::class, 'demoData']);
-$router->post('/developer/{key}/demo/generate', [DeveloperController::class, 'generateDemo']);
-$router->post('/developer/{key}/demo/reset', [DeveloperController::class, 'resetDemo']);
+$router->get('/developer/sql', [DeveloperController::class, 'developerSql'], ['auth', 'role:developer']);
+$router->post('/developer/sql', [DeveloperController::class, 'developerRunSql'], ['auth', 'role:developer']);
+
+$router->get('/developer/demo', [DeveloperController::class, 'developerDemo'], ['auth', 'role:developer']);
+$router->post('/developer/demo/generate', [DeveloperController::class, 'developerGenerateDemo'], ['auth', 'role:developer']);
+$router->post('/developer/demo/reset', [DeveloperController::class, 'developerResetDemo'], ['auth', 'role:developer']);
 
 /* Anonymous-by-design UAT invitations (token in URL) */
 $router->get('/uat/respond/{token}', [UatController::class, 'respond']);

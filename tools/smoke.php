@@ -98,23 +98,18 @@ function cookieHeader(array $cookies): string
     return implode('; ', array_map(static fn($c) => trim($c), $cookies));
 }
 
-// 1. Prime cookies + CSRF token.
+// 1. Prime cookies.
 [$status, $body, $err, $cookies] = request($base . '/login', [CURLOPT_COOKIEJAR => $jar, CURLOPT_COOKIEFILE => $jar]);
 if ($status !== 200) {
     fwrite(STDERR, "Cannot reach $base/login (status $status) $err\n");
     exit(2);
 }
-if (!preg_match('/name="_token" value="([^"]+)"/', $body, $m)) {
-    fwrite(STDERR, "CSRF token not found on login page.\n");
-    exit(2);
-}
-$token = $m[1];
 
 // 2. Sign in.
 [$status, $body, $err, $setCookies] = request($base . '/login', [
     CURLOPT_POST => true,
     CURLOPT_POSTFIELDS => http_build_query([
-        '_token' => $token, 'login' => $login, 'password' => $password,
+        'login' => $login, 'password' => $password,
     ]),
     CURLOPT_COOKIEJAR => $jar,
     CURLOPT_COOKIEFILE => $jar,

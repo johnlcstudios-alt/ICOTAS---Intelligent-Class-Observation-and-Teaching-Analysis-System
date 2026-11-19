@@ -24,9 +24,10 @@ final class AuthController extends BaseController
     public function showLogin(): void
     {
         $this->view('auth/login', [
-            'pageTitle' => 'Sign in',
-            'loginMode'   => 'signin',
-            'signupEnabled' => $this->signupEnabled(),
+            'pageTitle'          => 'Sign in',
+            'loginMode'          => 'signin',
+            'signupEnabled'      => $this->signupEnabled(),
+            'deanSignupEnabled'  => $this->deanSignupEnabled(),
         ], 'layouts/auth');
     }
 
@@ -193,10 +194,132 @@ final class AuthController extends BaseController
         redirect('login');
     }
 
+    public function showDeanSignup(): void
+    {
+        if (!$this->deanSignupEnabled()) {
+            $this->deanSignupClosedMessage();
+        }
+
+        $this->view('auth/dean-signup', [
+            'pageTitle' => 'Create Dean account',
+        ], 'layouts/auth');
+    }
+
+    public function deanSignup(): void
+    {
+        $this->requirePost();
+
+        if (!$this->deanSignupEnabled()) {
+            $this->deanSignupClosedMessage();
+        }
+        if (RateLimiter::tooMany('auth.dean_signup', 5, 3600)) {
+            $this->error('Too many Dean account creation attempts from this network. Please try again later.', 'dean-signup');
+        }
+
+        // Honeypot: real Deans never see or fill this field.
+        if ($this->postString('website') !== '') {
+            flash('success', 'Account created. Sign in with your username or email to continue.');
+            redirect('login');
+        }
+
+        $input = [
+            'first_name' => $this->postString('first_name'),
+            'middle_name' => $this->postString('middle_name'),
+            'last_name' => $this->postString('last_name'),
+            'suffix' => $this->postString('suffix'),
+            'username' => strtolower($this->postString('username')),
+            'email' => strtolower($this->postString('email')),
+            'employee_number' => $this->postString('employee_number'),
+        ];
+        $password = (string) $this->input('password', '');
+        $confirmation = (string) $this->input('password_confirmation', '');
+        $accepted = $this->postString('accept_terms');
+
+        $validator = Validator::make(array_merge($input, [
+            'password' => $password,
+            'password_confirmation' => $confirmation,
+            'accept_terms' => $accepted,
+        ]), [
+            'first_name' => 'required|max:80',
+            'middle_name' => 'nullable|max:80',
+            'last_name' => 'required|max:80',
+            'suffix' => 'nullable|max:20',
+            'username' => 'required|min:3|max:80|regex:/^[A-Za-z0-9._-]+$/',
+            'email' => 'required|email|max:190',
+            'employee_number' => 'nullable|max:40',
+            'password' => 'required|min:8|max:200|confirmed',
+            'accept_terms' => 'required|in:1',
+        ]);
+
+        if ($validator->fails()) {
+            Session::set('_old', $input);
+            $this->error((string) $validator->firstError(), 'dean-signup');
+        }
+
+        $problem = Security::passwordProblem($password);
+        if ($problem !== null) {
+            Session::set('_old', $input);
+            $this->error($problem, 'dean-signup');
+        }
+
+        if ($this->valueExists('username', $input['username']) || $this->valueExists('email', $input['email'])) {
+            Session::set('_old', $input);
+            $this->error('That username or email address is already registered. Try another or sign in.', 'dean-signup');
+        }
+        if (!empty($input['employee_number']) && $this->valueExists('employee_number', $input['employee_number'])) {
+            Session::set('_old', $input);
+            $this->error('That employee number is already registered.', 'dean-signup');
+        }
+
+        $roleId = $this->users->roleId('dean');
+        if ($roleId === null) {
+            $this->error('Dean registration is not available right now. Contact the system administrator.', 'dean-signup');
+        }
+
+        try {
+            $id = $this->users->createAccount([
+                'role_id' => $roleId,
+                'username' => $input['username'],
+                'email' => $input['email'],
+                'password_hash' => password_hash($password, PASSWORD_DEFAULT),
+                'first_name' => $input['first_name'],
+                'middle_name' => $input['middle_name'] !== '' ? $input['middle_name'] : null,
+                'last_name' => $input['last_name'],
+                'suffix' => $input['suffix'] !== '' ? $input['suffix'] : null,
+                'employee_number' => $input['employee_number'] !== '' ? $input['employee_number'] : null,
+                'status' => 'active',
+                'is_demo' => 0,
+            ]);
+        } catch (\Throwable $e) {
+            error_log('Dean self-registration failed: ' . $e->getMessage());
+            Session::set('_old', $input);
+            $this->error('The account could not be created. The username, email, or employee number may already be in use.', 'dean-signup');
+        }
+
+        Session::remove('_old');
+        (new AuditService())->record(
+            'user.dean_signup',
+            'user',
+            $id,
+            'Self-registered Dean account ' . $input['username'] . ' (employee number ' . $input['employee_number'] . ')',
+            $id
+        );
+
+        flash('success', 'Dean account created. Sign in with your username or email to continue.');
+        redirect('login');
+    }
+
     private function signupEnabled(): bool
     {
         // Self-registration creates live accounts, so it is closed in demo mode.
         return (string) Setting::get('allow_student_signup', '1') === '1' && !Setting::demoMode();
+    }
+
+    private function deanSignupEnabled(): bool
+    {
+        // Dean self-registration creates live college-wide administrative accounts,
+        // so it is closed in demo mode.
+        return (string) Setting::get('allow_dean_signup', '0') === '1' && !Setting::demoMode();
     }
 
     private function signupClosedMessage(): void
@@ -205,6 +328,14 @@ final class AuthController extends BaseController
             $this->error('Student self-registration is unavailable while demonstration mode is active.', 'login');
         }
         $this->error('Student self-registration is currently closed. Contact the academic office for an account.', 'login');
+    }
+
+    private function deanSignupClosedMessage(): void
+    {
+        if (Setting::demoMode()) {
+            $this->error('Dean self-registration is unavailable while demonstration mode is active.', 'login');
+        }
+        $this->error('Dean self-registration is currently closed. Contact the system administrator for an account.', 'login');
     }
 
     private function rememberSignupInput(array $input): void

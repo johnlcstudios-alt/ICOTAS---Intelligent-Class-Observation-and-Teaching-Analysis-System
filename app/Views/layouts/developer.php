@@ -28,7 +28,6 @@ $systemName = (string) setting('system_name', 'ICOTAS');
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow, noarchive">
     <meta name="referrer" content="no-referrer">
-    <meta name="csrf-token" content="<?= e(csrf_token()) ?>">
     <meta name="theme-color" content="#061b3d">
     <title><?= e($pageTitle ?? 'Developer console') ?> · <?= e($systemName) ?> Developer</title>
     <link rel="stylesheet" href="<?= asset('vendor/bootstrap.min.css') ?>">

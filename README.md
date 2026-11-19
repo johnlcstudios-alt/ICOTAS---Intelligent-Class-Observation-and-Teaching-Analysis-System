@@ -54,6 +54,91 @@ tools/                    CLI and HTTP test utilities (development only)
 
 ---
 
+## Step-by-Step: Start ICOTAS
+
+Follow these steps to get the system running locally on XAMPP.
+
+### Step 1 — Check requirements
+
+| Component | Requirement |
+|---|---|
+| PHP | 8.0 or newer (8.4 recommended). Verified on 8.0.30 and 8.5.6 |
+| PHP extensions | `pdo_mysql`, `mbstring`, `openssl`, `curl`, `fileinfo`, `json` |
+| Database | MySQL 5.7+ or MariaDB 10.3+ |
+| Web server | Apache with `mod_rewrite` (XAMPP, InfinityFree) or the PHP built-in server |
+
+Verify PHP and extensions:
+
+```powershell
+php -v
+php -m | Select-String -Pattern 'pdo_mysql|mbstring|openssl|curl|fileinfo'
+mysql --version
+```
+
+On Windows, enable the extensions in `php.ini` by removing the leading `;` from `extension=pdo_mysql`, `extension=mbstring`, `extension=openssl`, and `extension=curl`.
+
+### Step 2 — Create the database
+
+Create the `icotas` database before running the installer:
+
+```powershell
+mysql -u root -e "CREATE DATABASE icotas CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+```
+
+Use the credentials your host gives you if you are not running MySQL locally.
+
+### Step 3 — Start the application
+
+Choose **one** of these two methods:
+
+#### Method A — PHP built-in server (fastest)
+
+From the repository root:
+
+```powershell
+C:\xampp\php\php.exe -S 127.0.0.1:8090 tools/dev-router.php
+```
+
+Leave this running. Open **http://127.0.0.1:8090/install.php**.
+
+To stop, press `Ctrl+C`. If port 8090 is busy, use another port (for example `8091`).
+
+#### Method B — Apache / XAMPP
+
+1. Copy or clone the project into `C:\xampp\htdocs\icotas` so that `index.php` is directly inside it.
+2. Start Apache and MySQL from the XAMPP control panel.
+3. Make sure `.htaccess` is honoured (`AllowOverride All` for the directory) and that `mod_rewrite` is enabled.
+4. Make `config/` and `storage/` writable by the web server.
+5. Open **http://localhost/icotas/install.php**.
+
+### Step 4 — Run the installer
+
+1. Open the installer URL (from Step 3).
+2. Enter the database host, port, name, username, and password.
+3. Review the institution name and system name, and set the application URL only if needed (leave blank otherwise).
+4. Enter the first **Dean** account: first name, last name, username, email, and a password of at least 12 characters.
+5. Submit. The installer writes `config/local.php`, imports all 44 tables, creates the Dean, and writes `storage/installed.lock`.
+6. **Copy the developer URL shown once on the success screen.** Treat it like a password — it opens the unlinked developer console at `/developer/{key}`.
+7. Delete `install.php` from the server.
+
+### Step 5 — Sign in
+
+Open **http://127.0.0.1:8090/login** (or your Apache URL) and sign in with the Dean account you just created.
+
+**Demo credentials** (if you seeded demo data): password is `Demo@12345` for all accounts:
+- Dean: `demo.dean`
+- Academic Head: `demo.head.ccs`, `demo.head.cba`
+- Instructor: `demo.instructor.01` … `demo.instructor.12`
+- Student: `demo.student.001` … `demo.student.090`
+
+### Step 6 — Create more accounts
+
+No invitation codes are needed:
+- **Administrators** — **Users → Administrators** (`/dean/administrators`). Create Dean or Academic Head accounts.
+- **All other users** — **User management** (`/dean/users`). Create instructor, student, and staff accounts.
+
+---
+
 ## Clone, install, and start
 
 ### 1. Requirements

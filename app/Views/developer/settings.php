@@ -1,11 +1,13 @@
 <?php
 /**
- * @var string $developerKey
+ * @var string|null $developerKey
+ * @var string|null $consoleBase
  * @var array $settings
  * @var array $grouped
  * @var bool $demoMode
  */
-$console = static fn (string $path = ''): string => url('developer/' . rawurlencode($developerKey) . ($path !== '' ? '/' . ltrim($path, '/') : ''));
+$consoleBase = $consoleBase ?? ('developer/' . rawurlencode((string) ($developerKey ?? '')));
+$console = static fn (string $path = ''): string => url($consoleBase . ($path !== '' ? '/' . ltrim($path, '/') : ''));
 $groupMeta = [
     'general' => ['label' => 'Institution identity', 'icon' => 'bi-building'],
     'academic' => ['label' => 'Academic period', 'icon' => 'bi-calendar3'],

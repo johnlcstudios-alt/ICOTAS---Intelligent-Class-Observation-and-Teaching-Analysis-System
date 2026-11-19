@@ -795,6 +795,725 @@ final class DeveloperController extends BaseController
     }
 
     /* ---------------------------------------------------------------------
+     * Role-based developer console (no key required — Auth role gate)
+     * ------------------------------------------------------------------ */
+
+    public function developerDashboard(): void
+    {
+        $this->requireDeveloper();
+        $stats = $this->data->databaseStats();
+
+        $roleCounts = Database::fetchAll(
+            'SELECT r.slug, r.name,
+                    COUNT(u.id) AS total,
+                    SUM(CASE WHEN u.is_demo = 1 THEN 1 ELSE 0 END) AS demo_count,
+                    SUM(CASE WHEN u.is_demo = 0 THEN 1 ELSE 0 END) AS live_count
+             FROM roles r
+             LEFT JOIN users u ON u.role_id = r.id
+             GROUP BY r.id, r.slug, r.name
+             ORDER BY r.id ASC'
+        );
+        foreach ($roleCounts as &$row) {
+            $row['total'] = (int) $row['total'];
+            $row['demo_count'] = (int) $row['demo_count'];
+            $row['live_count'] = (int) $row['live_count'];
+        }
+        unset($row);
+
+        $recentUsers = Database::fetchAll(
+            'SELECT u.id, u.username, u.first_name, u.last_name, u.email, u.status, u.is_demo, u.created_at,
+                    r.slug AS role, r.name AS role_name
+             FROM users u JOIN roles r ON r.id = u.role_id
+             ORDER BY u.id DESC LIMIT 8'
+        );
+        $recentAudit = (new AuditLog())->paginate([], 1, 8)['rows'];
+
+        $this->view('developer/dashboard', [
+            'pageTitle' => 'Developer Console',
+            'stats' => $stats,
+            'roleCounts' => $roleCounts,
+            'recentUsers' => $recentUsers,
+            'recentAudit' => $recentAudit,
+            'auditToday' => (int) Database::scalar(
+                'SELECT COUNT(*) FROM audit_logs WHERE created_at >= CURDATE()',
+                [],
+                0
+            ),
+            'activeSessions' => (int) Database::scalar(
+                'SELECT COUNT(*) FROM user_sessions WHERE last_activity > (NOW() - INTERVAL 30 MINUTE)',
+                [],
+                0
+            ),
+            'demoMode' => Setting::demoMode(),
+            'appVersion' => (string) config('app.version', '—'),
+            'phpVersion' => PHP_VERSION,
+        ], 'layouts/app');
+    }
+
+    public function developerUsers(): void
+    {
+        $this->requireDeveloper();
+
+        $filters = [
+            'search' => $this->input('search', ''),
+            'role' => $this->input('role', ''),
+            'status' => $this->input('status', ''),
+        ];
+        $scope = $this->input('is_demo', '');
+        if ($scope !== '') {
+            $filters['is_demo'] = (int) $scope;
+        }
+
+        $pagination = $this->users->paginate($filters, $this->page(), 25);
+
+        $this->view('developer/users', [
+            'pageTitle' => 'Users',
+            'pagination' => $pagination,
+            'filters' => $filters,
+            'roles' => Database::fetchAll('SELECT id, slug, name FROM roles ORDER BY id'),
+            'roleCounts' => $this->userRoleCounts(),
+            'demoMode' => Setting::demoMode(),
+        ], 'layouts/app');
+    }
+
+    public function developerCreateUser(): void
+    {
+        $this->requireDeveloper();
+        $this->view('developer/user-form', array_merge($this->userFormData(null), [
+            'generatedCredentials' => null,
+        ]), 'layouts/app');
+    }
+
+    public function developerStoreUser(): void
+    {
+        $this->requireDeveloper();
+        $this->requirePost();
+
+        if (RateLimiter::tooMany('developer.user_write', 60, 3600)) {
+            $this->error('Too many developer account changes from this network. Try again later.', 'developer/users');
+        }
+
+        $payload = $this->userPayload();
+        $validator = Validator::make($payload + [
+            'password_mode' => $this->postString('password_mode', 'generate'),
+        ], [
+            'first_name' => 'required|max:80',
+            'middle_name' => 'nullable|max:80',
+            'last_name' => 'required|max:80',
+            'suffix' => 'nullable|max:20',
+            'username' => 'required|min:3|max:80|regex:/^[A-Za-z0-9._-]+$/',
+            'email' => 'required|email|max:190',
+            'employee_number' => 'nullable|max:40',
+            'student_number' => 'nullable|max:40',
+            'phone' => 'nullable|max:30',
+            'role' => 'required|in:dean,academic_head,developer,instructor,student',
+            'status' => 'required|in:active,inactive',
+            'password_mode' => 'required|in:generate,manual',
+        ]);
+
+        if ($validator->fails()) {
+            $this->rememberUserInput($payload);
+            $this->error((string) $validator->firstError(), 'developer/users/create');
+        }
+
+        $roleId = $this->users->roleId($payload['role']);
+        if ($roleId === null) {
+            $this->rememberUserInput($payload);
+            $this->error('That role is not available in this installation.', 'developer/users/create');
+        }
+
+        if ($this->userValueExists('username', $payload['username']) || $this->userValueExists('email', $payload['email'])) {
+            $this->rememberUserInput($payload);
+            $this->error('That username or email address is already registered.', 'developer/users/create');
+        }
+        foreach (['employee_number', 'student_number'] as $column) {
+            if ($payload[$column] !== '' && $this->userValueExists($column, $payload[$column])) {
+                $this->rememberUserInput($payload);
+                $this->error('That ' . str_replace('_', ' ', $column) . ' is already registered.', 'developer/users/create');
+            }
+        }
+
+        $mode = $this->postString('password_mode', 'generate');
+        $generated = $mode === 'generate';
+        if ($generated) {
+            $plainPassword = Security::temporaryPassword();
+            $mustChange = 1;
+        } else {
+            $plainPassword = (string) $this->input('password', '');
+            $problem = Security::passwordProblem($plainPassword);
+            if ($problem !== null) {
+                $this->rememberUserInput($payload);
+                $this->error($problem, 'developer/users/create');
+            }
+            if ($plainPassword !== (string) $this->input('password_confirmation', '')) {
+                $this->rememberUserInput($payload);
+                $this->error('The password confirmation does not match.', 'developer/users/create');
+            }
+            $mustChange = $this->input('must_change_password') ? 1 : 0;
+        }
+
+        try {
+            $id = Database::transaction(function () use ($payload, $roleId, $plainPassword, $mustChange): int {
+                return $this->users->createAccount([
+                    'role_id' => $roleId,
+                    'username' => $payload['username'],
+                    'email' => $payload['email'],
+                    'password_hash' => password_hash($plainPassword, PASSWORD_DEFAULT),
+                    'first_name' => $payload['first_name'],
+                    'middle_name' => $payload['middle_name'] !== '' ? $payload['middle_name'] : null,
+                    'last_name' => $payload['last_name'],
+                    'suffix' => $payload['suffix'] !== '' ? $payload['suffix'] : null,
+                    'employee_number' => $payload['employee_number'] !== '' ? $payload['employee_number'] : null,
+                    'student_number' => $payload['student_number'] !== '' ? $payload['student_number'] : null,
+                    'department_id' => (int) $this->input('department_id', 0) ?: null,
+                    'program_id' => (int) $this->input('program_id', 0) ?: null,
+                    'section_id' => (int) $this->input('section_id', 0) ?: null,
+                    'year_level' => (int) $this->input('year_level', 0) ?: null,
+                    'phone' => $payload['phone'] !== '' ? $payload['phone'] : null,
+                    'status' => $payload['status'],
+                    'is_demo' => $this->input('is_demo') ? 1 : 0,
+                    'must_change_password' => $mustChange,
+                ]);
+            });
+        } catch (\Throwable $e) {
+            error_log('Developer user creation failed: ' . $e->getMessage());
+            $this->rememberUserInput($payload);
+            $this->error('The account could not be created: ' . $e->getMessage(), 'developer/users/create');
+        }
+
+        Session::remove('_old');
+        (new AuditService())->record(
+            'developer.user_create',
+            'user',
+            $id,
+            'Created ' . $payload['role'] . ' account ' . $payload['username']
+            . ($generated ? ' with a generated temporary password' : ' with an explicit password')
+        );
+
+        if ($generated) {
+            Session::set('_developer_credentials', [
+                'user_id' => $id,
+                'username' => $payload['username'],
+                'password' => $plainPassword,
+                'kind' => 'temporary',
+            ]);
+        }
+        $this->success('Account created.', 'developer/users/' . $id . '/edit');
+    }
+
+    public function developerEditUser(string $id): void
+    {
+        $this->requireDeveloper();
+        $user = $this->users->findWithRelations((int) $id);
+        if (!$user) {
+            abort(404);
+        }
+
+        $generated = Session::pull('_developer_credentials');
+        if (!is_array($generated) || (int) ($generated['user_id'] ?? 0) !== (int) $id) {
+            $generated = null;
+        }
+
+        $this->view('developer/user-form', array_merge($this->userFormData($user), [
+            'generatedCredentials' => $generated,
+        ]), 'layouts/app');
+    }
+
+    public function developerUpdateUser(string $id): void
+    {
+        $this->requireDeveloper();
+        $this->requirePost();
+        $id = (int) $id;
+        $user = $this->users->findWithRelations($id);
+        if (!$user) {
+            abort(404);
+        }
+
+        $payload = $this->userPayload();
+        $validator = Validator::make($payload, [
+            'first_name' => 'required|max:80',
+            'middle_name' => 'nullable|max:80',
+            'last_name' => 'required|max:80',
+            'suffix' => 'nullable|max:20',
+            'username' => 'required|min:3|max:80|regex:/^[A-Za-z0-9._-]+$/',
+            'email' => 'required|email|max:190',
+            'employee_number' => 'nullable|max:40',
+            'student_number' => 'nullable|max:40',
+            'phone' => 'nullable|max:30',
+            'role' => 'required|in:dean,academic_head,developer,instructor,student',
+            'status' => 'required|in:active,inactive',
+        ]);
+        if ($validator->fails()) {
+            $this->rememberUserInput($payload);
+            $this->error((string) $validator->firstError(), 'developer/users/' . $id . '/edit');
+        }
+
+        $roleId = $this->users->roleId($payload['role']);
+        if ($roleId === null) {
+            $this->rememberUserInput($payload);
+            $this->error('That role is not available in this installation.', 'developer/users/' . $id . '/edit');
+        }
+
+        if ($this->userValueExists('username', $payload['username'], $id) || $this->userValueExists('email', $payload['email'], $id)) {
+            $this->rememberUserInput($payload);
+            $this->error('That username or email address belongs to another account.', 'developer/users/' . $id . '/edit');
+        }
+        foreach (['employee_number', 'student_number'] as $column) {
+            if ($payload[$column] !== '' && $this->userValueExists($column, $payload[$column], $id)) {
+                $this->rememberUserInput($payload);
+                $this->error('That ' . str_replace('_', ' ', $column) . ' belongs to another account.', 'developer/users/' . $id . '/edit');
+            }
+        }
+
+        if ((string) $user['role'] === 'dean'
+            && ($payload['role'] !== 'dean' || $payload['status'] !== 'active')
+            && $this->activeDeans() <= 1
+        ) {
+            $this->rememberUserInput($payload);
+            $this->error('At least one active Dean account must remain.', 'developer/users/' . $id . '/edit');
+        }
+
+        $this->users->updateAccount($id, [
+            'role_id' => $roleId,
+            'username' => $payload['username'],
+            'email' => $payload['email'],
+            'first_name' => $payload['first_name'],
+            'middle_name' => $payload['middle_name'] !== '' ? $payload['middle_name'] : null,
+            'last_name' => $payload['last_name'],
+            'suffix' => $payload['suffix'] !== '' ? $payload['suffix'] : null,
+            'employee_number' => $payload['employee_number'] !== '' ? $payload['employee_number'] : null,
+            'student_number' => $payload['student_number'] !== '' ? $payload['student_number'] : null,
+            'department_id' => (int) $this->input('department_id', 0) ?: null,
+            'program_id' => (int) $this->input('program_id', 0) ?: null,
+            'section_id' => (int) $this->input('section_id', 0) ?: null,
+            'year_level' => (int) $this->input('year_level', 0) ?: null,
+            'phone' => $payload['phone'] !== '' ? $payload['phone'] : null,
+            'status' => $payload['status'],
+        ]);
+
+        Session::remove('_old');
+        (new AuditService())->record('developer.user_update', 'user', $id, 'Updated account ' . $payload['username']);
+        $this->success('Account updated.', 'developer/users/' . $id . '/edit');
+    }
+
+    public function developerToggleUserStatus(string $id): void
+    {
+        $this->requireDeveloper();
+        $this->requirePost();
+        $id = (int) $id;
+        $user = $this->users->findWithRelations($id);
+        if (!$user) {
+            abort(404);
+        }
+        if ((string) $user['role'] === 'dean' && (string) $user['status'] === 'active' && $this->activeDeans() <= 1) {
+            $this->error('At least one active Dean account must remain.', 'developer/users');
+        }
+
+        $new = (string) $user['status'] === 'active' ? 'inactive' : 'active';
+        $this->users->setStatus($id, $new);
+        (new AuditService())->record('developer.user_status', 'user', $id, 'Set account status to ' . $new);
+        Database::execute('DELETE FROM user_sessions WHERE user_id = ?', [$id]);
+        $this->success('Account marked ' . $new . '.', 'developer/users');
+    }
+
+    public function developerResetUserPassword(string $id): void
+    {
+        $this->requireDeveloper();
+        $this->requirePost();
+        $id = (int) $id;
+        $user = $this->users->findWithRelations($id);
+        if (!$user) {
+            abort(404);
+        }
+
+        $generate = (bool) $this->input('generate');
+        if ($generate) {
+            $plain = Security::temporaryPassword();
+            $mustChange = true;
+        } else {
+            $plain = (string) $this->input('password', '');
+            $problem = Security::passwordProblem($plain);
+            if ($problem !== null) {
+                $this->error($problem, 'developer/users/' . $id . '/edit');
+            }
+            if ($plain !== (string) $this->input('password_confirmation', '')) {
+                $this->error('The password confirmation does not match.', 'developer/users/' . $id . '/edit');
+            }
+            $mustChange = (bool) $this->input('must_change_password');
+        }
+
+        $this->users->resetPassword($id, $plain, $mustChange);
+        (new AuditService())->record(
+            'developer.user_password',
+            'user',
+            $id,
+            'Reset the account password' . ($mustChange ? '; a change is required at next sign-in' : '')
+        );
+
+        if ($generate) {
+            Session::set('_developer_credentials', [
+                'user_id' => $id,
+                'username' => $user['username'],
+                'password' => $plain,
+                'kind' => 'temporary',
+            ]);
+        }
+        $this->success(
+            $generate ? 'Temporary password generated and all existing sessions signed out.' : 'Password reset and all existing sessions signed out.',
+            'developer/users/' . $id . '/edit'
+        );
+    }
+
+    public function developerDeleteUser(string $id): void
+    {
+        $this->requireDeveloper();
+        $this->requirePost();
+        $id = (int) $id;
+        $user = $this->users->findWithRelations($id);
+        if (!$user) {
+            abort(404);
+        }
+        if ((string) $user['role'] === 'dean' && (string) $user['status'] === 'active' && $this->activeDeans() <= 1) {
+            $this->error('At least one active Dean account must remain.', 'developer/users/' . $id . '/edit');
+        }
+
+        try {
+            Database::execute('DELETE FROM users WHERE id = ?', [$id]);
+        } catch (\Throwable $e) {
+            error_log('Developer user deletion failed: ' . $e->getMessage());
+            $this->error('The account could not be deleted: ' . $e->getMessage(), 'developer/users/' . $id . '/edit');
+        }
+
+        (new AuditService())->record('developer.user_delete', 'user', $id, 'Deleted account ' . $user['username']);
+        $this->success('Account deleted.', 'developer/users');
+    }
+
+    public function developerData(): void
+    {
+        $this->requireDeveloper();
+        $this->view('developer/data-index', [
+            'pageTitle' => 'Data Browser',
+            'tables' => $this->data->tables(),
+            'stats' => $this->data->databaseStats(),
+        ], 'layouts/app');
+    }
+
+    public function developerDataTable(string $table): void
+    {
+        $this->requireDeveloper();
+        if (!$this->data->tableExists($table)) {
+            abort(404);
+        }
+
+        $search = (string) $this->input('search', '');
+        $pagination = $this->data->paginate($table, $this->page(), 25, $search);
+        $this->view('developer/rows', [
+            'pageTitle' => $table,
+            'table' => $table,
+            'columns' => $this->data->columns($table),
+            'pagination' => $pagination,
+            'search' => $search,
+            'primaryKey' => $this->data->primaryKey($table),
+            'compositePrimaryKey' => $this->data->hasCompositePrimaryKey($table),
+        ], 'layouts/app');
+    }
+
+    public function developerCreateRow(string $table): void
+    {
+        $this->requireDeveloper();
+        if (!$this->data->tableExists($table)) {
+            abort(404);
+        }
+        $this->view('developer/row-form', [
+            'pageTitle' => 'New row · ' . $table,
+            'table' => $table,
+            'row' => null,
+            'columns' => $this->data->columns($table),
+            'foreignOptions' => $this->foreignOptions($table),
+            'primaryKey' => $this->data->primaryKey($table),
+        ], 'layouts/app');
+    }
+
+    public function developerStoreRow(string $table): void
+    {
+        $this->requireDeveloper();
+        $this->requirePost();
+        if (!$this->data->tableExists($table)) {
+            abort(404);
+        }
+
+        $fields = $this->postArray('fields');
+        $result = $this->data->create($table, $fields);
+        if (!$result['ok']) {
+            Session::set('_old', ['fields' => $fields]);
+            $this->error('Row could not be created: ' . $result['error'], 'developer/data/' . rawurlencode($table) . '/create');
+        }
+
+        (new AuditService())->record('developer.data_create', $table, (int) ($result['id'] ?? 0), 'Inserted a row into ' . $table);
+        $this->success('Row created in ' . $table . '.', 'developer/data/' . rawurlencode($table));
+    }
+
+    public function developerEditRow(string $table, string $id): void
+    {
+        $this->requireDeveloper();
+        if (!$this->data->tableExists($table)) {
+            abort(404);
+        }
+        $row = $this->data->find($table, $id);
+        if (!$row) {
+            abort(404);
+        }
+        $this->view('developer/row-form', [
+            'pageTitle' => 'Edit row · ' . $table,
+            'table' => $table,
+            'row' => $row,
+            'columns' => $this->data->columns($table),
+            'foreignOptions' => $this->foreignOptions($table),
+            'primaryKey' => $this->data->primaryKey($table),
+        ], 'layouts/app');
+    }
+
+    public function developerUpdateRow(string $table, string $id): void
+    {
+        $this->requireDeveloper();
+        $this->requirePost();
+        if (!$this->data->tableExists($table)) {
+            abort(404);
+        }
+
+        $fields = $this->postArray('fields');
+        $result = $this->data->update($table, $id, $fields);
+        if (!$result['ok']) {
+            Session::set('_old', ['fields' => $fields]);
+            $this->error('Row could not be updated: ' . $result['error'], 'developer/data/' . rawurlencode($table) . '/' . rawurlencode($id) . '/edit');
+        }
+
+        (new AuditService())->record('developer.data_update', $table, (int) $id, 'Updated a row in ' . $table);
+        $this->success('Row updated in ' . $table . '.', 'developer/data/' . rawurlencode($table));
+    }
+
+    public function developerDeleteRow(string $table, string $id): void
+    {
+        $this->requireDeveloper();
+        $this->requirePost();
+        if (!$this->data->tableExists($table)) {
+            abort(404);
+        }
+
+        $result = $this->data->delete($table, $id);
+        if (!$result['ok']) {
+            $this->error('Row could not be deleted: ' . $result['error'], 'developer/data/' . rawurlencode($table));
+        }
+
+        (new AuditService())->record('developer.data_delete', $table, (int) $id, 'Deleted a row from ' . $table);
+        $this->success('Row deleted from ' . $table . '.', 'developer/data/' . rawurlencode($table));
+    }
+
+    public function developerSettings(): void
+    {
+        $this->requireDeveloper();
+        $settings = Database::fetchAll(
+            'SELECT s.*, u.username AS updated_by_username
+             FROM system_settings s
+             LEFT JOIN users u ON u.id = s.updated_by
+             ORDER BY s.setting_group ASC, s.setting_key ASC'
+        );
+        $grouped = [];
+        foreach ($settings as $setting) {
+            $grouped[(string) $setting['setting_group']][] = $setting;
+        }
+
+        $this->view('developer/settings', [
+            'pageTitle' => 'System Settings',
+            'settings' => $settings,
+            'grouped' => $grouped,
+            'demoMode' => Setting::demoMode(),
+        ], 'layouts/app');
+    }
+
+    public function developerUpdateSettings(): void
+    {
+        $this->requireDeveloper();
+        $this->requirePost();
+
+        $rows = Database::fetchAll('SELECT id, setting_key, setting_group FROM system_settings');
+        $byId = [];
+        foreach ($rows as $row) {
+            $byId[(int) $row['id']] = $row;
+        }
+
+        $submitted = $this->postArray('settings');
+        $updated = 0;
+        foreach ($submitted as $id => $value) {
+            $row = $byId[(int) $id] ?? null;
+            if (!$row || is_array($value)) {
+                continue;
+            }
+            $value = trim((string) $value);
+            if (mb_strlen($value) > 5000) {
+                $this->error('The value for ' . $row['setting_key'] . ' is too long.', 'developer/settings');
+            }
+            Setting::set((string) $row['setting_key'], $value, (string) $row['setting_group']);
+            $updated++;
+        }
+
+        Setting::clearCache();
+        (new AuditService())->record('developer.settings_update', 'system_setting', null, 'Updated ' . $updated . ' system setting(s)');
+        $this->success('Updated ' . $updated . ' setting(s).', 'developer/settings');
+    }
+
+    public function developerStoreSetting(): void
+    {
+        $this->requireDeveloper();
+        $this->requirePost();
+
+        $settingKey = strtolower($this->postString('setting_key'));
+        $value = $this->postString('setting_value');
+        $group = strtolower($this->postString('setting_group', 'general')) ?: 'general';
+
+        if (!preg_match('/^[a-z0-9][a-z0-9_.-]{0,79}$/', $settingKey)) {
+            $this->error('Setting keys must start with a letter or number and contain only lowercase letters, numbers, dots, dashes, and underscores.', 'developer/settings');
+        }
+        if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,39}$/', $group)) {
+            $this->error('The group name contains invalid characters.', 'developer/settings');
+        }
+        if ((int) Database::scalar('SELECT COUNT(*) FROM system_settings WHERE setting_key = ?', [$settingKey], 0) > 0) {
+            $this->error('That setting key already exists. Edit it in the list above instead.', 'developer/settings');
+        }
+
+        Setting::set($settingKey, $value, $group);
+        Setting::clearCache();
+        (new AuditService())->record('developer.setting_create', 'system_setting', null, 'Created setting ' . $settingKey);
+        $this->success('Setting created.', 'developer/settings');
+    }
+
+    public function developerDeleteSetting(string $id): void
+    {
+        $this->requireDeveloper();
+        $this->requirePost();
+
+        $row = Database::fetch('SELECT * FROM system_settings WHERE id = ?', [(int) $id]);
+        if (!$row) {
+            abort(404);
+        }
+        Database::execute('DELETE FROM system_settings WHERE id = ?', [(int) $id]);
+        Setting::clearCache();
+        (new AuditService())->record('developer.setting_delete', 'system_setting', (int) $id, 'Deleted setting ' . $row['setting_key']);
+        $this->success('Setting deleted.', 'developer/settings');
+    }
+
+    public function developerAudit(): void
+    {
+        $this->requireDeveloper();
+        $filters = [
+            'action' => $this->input('action', ''),
+            'user_id' => $this->input('user_id', ''),
+            'from' => $this->input('from', ''),
+            'to' => $this->input('to', ''),
+        ];
+        $this->view('developer/audit', [
+            'pageTitle' => 'Audit Log',
+            'pagination' => (new AuditLog())->paginate($filters, $this->page(), 40),
+            'filters' => $filters,
+            'users' => Database::fetchAll('SELECT id, first_name, last_name, username FROM users ORDER BY last_name, first_name'),
+        ], 'layouts/app');
+    }
+
+    public function developerSql(): void
+    {
+        $this->requireDeveloper();
+        $result = Session::pull('_developer_sql_result');
+        $sqlText = Session::pull('_developer_sql_text');
+        $this->view('developer/sql', [
+            'pageTitle' => 'SQL Console',
+            'result' => is_array($result) ? $result : null,
+            'sqlText' => is_string($sqlText) ? $sqlText : '',
+            'tables' => $this->data->tables(),
+        ], 'layouts/app');
+    }
+
+    public function developerRunSql(): void
+    {
+        $this->requireDeveloper();
+        $this->requirePost();
+
+        if (RateLimiter::tooMany('developer.sql', 120, 300)) {
+            $this->error('Too many SQL statements from this network. Wait a few minutes and try again.', 'developer/sql');
+        }
+
+        $sql = (string) $this->input('sql', '');
+        $result = $this->data->executeSql(
+            $sql,
+            $this->postString('confirm'),
+            $this->postString('confirm_text')
+        );
+        Session::set('_developer_sql_result', $result);
+        Session::set('_developer_sql_text', $sql);
+
+        (new AuditService())->record(
+            'developer.sql_run',
+            'database',
+            null,
+            substr('SQL ' . ($result['statement'] ?? '') . ': ' . preg_replace('/\s+/', ' ', $sql), 0, 480)
+        );
+
+        if (!$result['ok']) {
+            $this->error('SQL error: ' . $result['error'], 'developer/sql');
+        }
+        $this->success(
+            'Statement executed in ' . ($result['duration_ms'] ?? 0) . ' ms'
+            . (($result['affected'] ?? 0) > 0 ? ' · ' . (int) $result['affected'] . ' row(s) affected' : '') . '.',
+            'developer/sql'
+        );
+    }
+
+    public function developerDemo(): void
+    {
+        $this->requireDeveloper();
+        $this->view('developer/demo', [
+            'pageTitle' => 'Demonstration Data',
+            'counts' => $this->demoCounts(),
+            'demoMode' => Setting::demoMode(),
+            'hasDemoAccounts' => (int) Database::scalar("SELECT COUNT(*) FROM users WHERE username = 'demo.dean'", [], 0) > 0,
+        ], 'layouts/app');
+    }
+
+    public function developerGenerateDemo(): void
+    {
+        $this->requireDeveloper();
+        $this->requirePost();
+
+        try {
+            $stats = (new DemoService())->seed();
+        } catch (\Throwable $e) {
+            $this->backWithError('Demo data could not be generated: ' . $e->getMessage(), 'developer/demo');
+        }
+        Setting::clearCache();
+        (new AuditService())->record('developer.demo_generate', 'demo', null, 'Generated synthetic demonstration data');
+        $this->success(
+            'Synthetic demonstration data generated: ' . (int) ($stats['responses'] ?? 0) . ' responses across '
+            . (int) ($stats['sessions'] ?? 0) . ' sessions. Demo mode is now ON. Password for demo accounts: Demo@12345.',
+            'developer/demo'
+        );
+    }
+
+    public function developerResetDemo(): void
+    {
+        $this->requireDeveloper();
+        $this->requirePost();
+
+        try {
+            (new DemoService())->reset();
+            Setting::set('demo_mode', '0', 'demo');
+            Setting::clearCache();
+        } catch (\Throwable $e) {
+            $this->backWithError('Demo data could not be reset: ' . $e->getMessage(), 'developer/demo');
+        }
+        (new AuditService())->record('developer.demo_reset', 'demo', null, 'Removed synthetic demonstration data');
+        $this->success('All flagged demonstration data was removed. Live records were not touched. Demo mode is OFF.', 'developer/demo');
+    }
+
+    /* ---------------------------------------------------------------------
      * Helpers
      * ------------------------------------------------------------------ */
 
