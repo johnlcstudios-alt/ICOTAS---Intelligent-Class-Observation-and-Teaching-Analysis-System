@@ -89,9 +89,13 @@ Use the credentials your host gives you if you are not running MySQL locally.
 
 ### Step 3 — Start the application
 
-Choose **one** of these two methods:
+Choose **one** of these three methods:
 
-#### Method A — PHP built-in server (fastest)
+#### Method A — One-click batch file (Windows, fastest)
+
+Double-click **`start-icotas.bat`** in the repository root. It checks PHP/MySQL, creates the database, starts the server, and opens the installer in your browser automatically.
+
+#### Method B — PHP built-in server (fastest)
 
 From the repository root:
 
@@ -103,7 +107,7 @@ Leave this running. Open **http://127.0.0.1:8090/install.php**.
 
 To stop, press `Ctrl+C`. If port 8090 is busy, use another port (for example `8091`).
 
-#### Method B — Apache / XAMPP
+#### Method C — Apache / XAMPP
 
 1. Copy or clone the project into `C:\xampp\htdocs\icotas` so that `index.php` is directly inside it.
 2. Start Apache and MySQL from the XAMPP control panel.
